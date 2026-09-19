@@ -10,6 +10,8 @@ from aiogram.fsm.storage.memory import SimpleEventIsolation
 from app.bot.handlers.start import router as start_router
 from app.bot.handlers.services import router as services_router
 from app.bot.handlers.vehicles import router as vehicles_router
+from app.bot.handlers.booking import router as booking_router
+from app.bot.handlers.appointments import router as appointments_router
 from app.config.settings import get_bot_token
 
 
@@ -24,6 +26,8 @@ async def main() -> None:
         ) from None
 
     dispatcher = Dispatcher(events_isolation=SimpleEventIsolation())
+    dispatcher.include_router(appointments_router)
+    dispatcher.include_router(booking_router)
     dispatcher.include_router(vehicles_router)
     dispatcher.include_router(start_router)
     dispatcher.include_router(services_router)

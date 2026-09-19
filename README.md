@@ -16,8 +16,8 @@ message and five reply keyboard buttons:
 - 🚗 My vehicles
 - 📋 My appointments
 
-`/start`, `🔧 Services & prices`, and `🚗 My vehicles` work. The other buttons
-remain placeholders.
+`/start`, `🔧 Services & prices`, `🚗 My vehicles`, `📅 Book a service`, and
+`📋 My appointments` work. `🤖 Describe a problem` remains a placeholder.
 
 The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
 models, psycopg 3, and Alembic migrations. Supabase is used only as PostgreSQL;
@@ -25,12 +25,12 @@ there is no Supabase SDK. The schema contains users, vehicles, services, and
 appointments. On `/start`, the bot creates or updates the sender's user profile
 by Telegram ID before displaying the welcome message and menu. The service
 catalog reads active services from PostgreSQL. Users can list and add their own
-vehicles in private chat. Appointments are not used by bot flows yet.
+vehicles in private chat, book a service, and view upcoming appointments.
 
 ## Planned future features
 
 - AI car issue consultation
-- Appointment booking
+- Real appointment capacity and mechanic availability
 - Gemini integration
 - RAG knowledge base
 - Human handoff
@@ -259,3 +259,60 @@ Manual verification (writes your vehicle to the configured database):
 
 Automated vehicle tests use an isolated in-memory database and mocked Telegram
 responses; they never create vehicles in Supabase.
+
+### Appointment booking
+
+In private chat, press `📅 Book a service`, select one of your vehicles, then an
+active service. If you have no vehicles, the bot offers the existing add-vehicle
+flow. Enter a date as `DD.MM.YYYY`, followed by a time as `HH:MM`, review the
+vehicle/service/price/date/time summary, and press `✅ Confirm`. An Appointment
+is inserted only after confirmation, with status `scheduled` and no problem
+description. `/cancel` during booking or `❌ Cancel` on the review screen clears
+the draft without saving. Vehicle `/cancel` continues to work independently.
+
+Dates and times use the explicit `Europe/Amsterdam` timezone via standard-library
+`zoneinfo`, including daylight-saving changes. Dates must be real, today or later,
+and no more than 90 days ahead (inclusive). Starts are allowed every 30 minutes
+from 09:00 through 17:30; 18:00 is closing time, not a valid start. Today's starts
+must still be in the future. The same rules are checked again on confirmation.
+These MVP rules apply every day and constrain start times only; they do not
+model weekends, holidays, service-duration capacity, or mechanic schedules.
+No free slot is guaranteed. Real availability is a future feature.
+
+`📋 My appointments` shows only the sender's upcoming appointments, ordered by
+date/time and then ID, with vehicle, service, Amsterdam date/time, and status.
+Opening this list abandons any unfinished draft. Appointment cancellation and
+rescheduling are not implemented.
+
+The focused appointment service owns all database queries and verifies the
+Telegram user's vehicle ownership and the service's active status on review and
+again inside the save transaction. It can be reused by a future API without
+Telegram types. Handlers run synchronous database operations in worker threads.
+Drafts remain in memory; restarting the bot discards them. No migration is needed.
+
+Each booking draft has a callback token. Stale tokens and out-of-order buttons
+are rejected. Existing per-conversation event isolation plus clearing FSM state
+before confirmation I/O prevents repeated confirm callbacks from saving the
+same in-memory draft twice. This is not distributed or restart-safe idempotency;
+stronger persistence/database guarantees will be needed later. After a save
+error the draft is cleared, and the bot asks users to check My appointments
+before retrying because a connection failure can make the commit outcome unclear.
+
+Manual verification after running the offline tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m compileall -q app scripts tests main.py
+.\.venv\Scripts\python.exe main.py
+```
+
+1. Send `/start` and ensure your account has a vehicle and the catalog has an active service.
+2. Press `📅 Book a service` and select your vehicle and a service.
+3. Enter an upcoming date within 90 days, try `14:15` to check rejection, then `14:30`.
+4. Review and cancel once; verify My appointments has no new entry.
+5. Repeat and confirm; verify one entry in `📋 My appointments` at the Amsterdam time.
+6. Check from another Telegram account that the vehicle and appointment remain private.
+
+Manual confirmation writes to the configured database. Automated tests use only
+isolated SQLite databases and mocks with fixed dates; they never create
+appointments in Supabase. Real PostgreSQL connectivity is not exercised by them.
