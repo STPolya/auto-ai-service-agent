@@ -6,12 +6,20 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-def get_bot_token() -> str:
+def _required_environment(name: str) -> str:
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    if not token:
+    value = os.getenv(name, "").strip()
+    if not value:
         raise ValueError(
-            "TELEGRAM_BOT_TOKEN is required. Set it in your environment "
-            "or copy .env.example to .env and fill in your bot token."
+            f"{name} is required. Set it in your environment or local .env file."
         )
-    return token
+    return value
+
+
+def get_bot_token() -> str:
+    return _required_environment("TELEGRAM_BOT_TOKEN")
+
+
+def get_database_url() -> str:
+    """Require database configuration only when database functionality is used."""
+    return _required_environment("DATABASE_URL")
