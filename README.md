@@ -20,7 +20,9 @@ The buttons are placeholders and do not have handlers yet. Only `/start` works.
 The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
 models, psycopg 3, and Alembic migrations. Supabase is used only as PostgreSQL;
 there is no Supabase SDK. The schema contains users, vehicles, services, and
-appointments. The bot does not access the database yet.
+appointments. On `/start`, the bot creates or updates the sender's user profile
+by Telegram ID before displaying the welcome message and menu. Other tables
+are not used by bot flows yet.
 
 ## Planned future features
 
@@ -81,8 +83,15 @@ An internet connection is required. Run only one polling process per bot token.
 `main.py` loads the token through `app/config/settings.py`, creates the bot and
 dispatcher, registers the start router, and starts long polling. The
 `CommandStart()` filter in `app/bot/handlers/start.py` routes `/start` to the
-asynchronous `handle_start` handler. The handler sends the welcome message with
-the reply keyboard from `app/bot/keyboards/main_menu.py`.
+asynchronous `handle_start` handler. The handler calls
+`app/services/user_service.py` through `asyncio.to_thread`, then sends the welcome
+message with the reply keyboard from `app/bot/keyboards/main_menu.py`.
+The service inserts missing users using PostgreSQL conflict handling, locks the
+matching row, and updates changed profile fields in one transaction. The unique
+Telegram ID index prevents duplicate users. Missing usernames and first names
+are stored as null. Database failures produce a friendly retry message and a
+server log without exception details; the welcome message is sent only after
+synchronization succeeds.
 
 Change `WELCOME_MESSAGE` in the start handler to edit the greeting and
 `MENU_LABELS` in the keyboard module to edit button text. Add future handlers as
@@ -98,7 +107,8 @@ in passwords and retain the provider's TLS connection parameters. Never print
 the URL or include it in `alembic.ini`.
 
 Database configuration is required only when creating an engine/session factory
-or running migrations. Imports and Telegram `/start` work without `DATABASE_URL`.
+or running migrations. Imports work without `DATABASE_URL`, but `/start` now
+requires a configured, reachable database with the initial migration applied.
 No tables are created automatically at startup.
 
 Install dependencies, inspect the migration history, and run offline checks:
@@ -113,7 +123,9 @@ Install dependencies, inspect the migration history, and run offline checks:
 
 The tests disable `.env` loading, compile PostgreSQL migration SQL in memory,
 load Alembic metadata offline, and compare the migration with the models using
-an in-memory SQLite database. They do not connect to Supabase. SQLite checks do
+an in-memory SQLite database. User service and handler tests verify profile
+synchronization, duplicate prevention, rollback, worker-thread execution, and
+safe failure responses. They do not connect to Supabase. SQLite checks do
 not verify PostgreSQL permissions, connectivity, or actual server behavior.
 
 Review `alembic/versions/20260919_0001_initial_schema.py` before applying it.
@@ -147,8 +159,8 @@ with SessionFactory.begin() as session:
 The context commits on success, rolls back on failure, and closes the session,
 returning its connection to the pool. `with SessionFactory() as session` only
 closes the session; writes require an explicit commit. Do not share sessions
-between threads or tasks. This layer is synchronous: future bot integration
-must avoid blocking the async event loop. Call `get_engine().dispose()` during
+between threads or tasks. The `/start` handler uses `asyncio.to_thread` so each
+synchronous user transaction runs outside the async event loop. Call `get_engine().dispose()` during
 shutdown of a future component that uses the database.
 
 SQL echo is disabled and SQL parameter values are hidden in SQLAlchemy errors.
@@ -163,3 +175,13 @@ driver and libpq without requiring a local compiler or PostgreSQL installation.
 Python 3.14 requires compatible binary wheels for your OS/architecture; if pip
 cannot find one, use a supported standard CPython build or Python 3.13. The
 offline checks can be run on your interpreter before configuring a database.
+
+### Verify user synchronization locally
+
+After the offline tests pass, start the bot with
+`.\.venv\Scripts\python.exe main.py` and send `/start` twice in Telegram.
+Both requests should show the existing welcome/menu; the configured database
+should contain one user row for your Telegram ID. Change your Telegram profile
+and send `/start` again to verify the same row is updated. This manual check
+writes your actual profile to the configured database; the automated tests do not.
+No new migration is needed for this integration.
