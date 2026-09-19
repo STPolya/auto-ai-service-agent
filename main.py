@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.utils.token import TokenValidationError
 
 from app.bot.handlers.start import router as start_router
+from app.bot.handlers.services import router as services_router
 from app.config.settings import get_bot_token
 
 
@@ -22,6 +23,7 @@ async def main() -> None:
 
     dispatcher = Dispatcher()
     dispatcher.include_router(start_router)
+    dispatcher.include_router(services_router)
 
     async with bot.context():
         await dispatcher.start_polling(bot, close_bot_session=False)

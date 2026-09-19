@@ -15,14 +15,15 @@ message and four reply keyboard buttons:
 - 🔧 Services & prices
 - 📋 My appointments
 
-The buttons are placeholders and do not have handlers yet. Only `/start` works.
+`/start` and `🔧 Services & prices` work. The other buttons remain placeholders.
 
 The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
 models, psycopg 3, and Alembic migrations. Supabase is used only as PostgreSQL;
 there is no Supabase SDK. The schema contains users, vehicles, services, and
 appointments. On `/start`, the bot creates or updates the sender's user profile
-by Telegram ID before displaying the welcome message and menu. Other tables
-are not used by bot flows yet.
+by Telegram ID before displaying the welcome message and menu. The service
+catalog reads active services from PostgreSQL. Vehicles and appointments are
+not used by bot flows yet.
 
 ## Planned future features
 
@@ -185,3 +186,39 @@ should contain one user row for your Telegram ID. Change your Telegram profile
 and send `/start` again to verify the same row is updated. This manual check
 writes your actual profile to the configured database; the automated tests do not.
 No new migration is needed for this integration.
+
+### Service catalog and demo seed
+
+The `🔧 Services & prices` button calls `app/services/service_catalog.py` in a
+worker thread using `asyncio.to_thread`. It loads active services ordered by ID,
+closes the session, and displays each service's name, EUR price, duration, and
+optional description. Prices retain Decimal precision and show two decimal
+places; missing prices show `Price on request`. Empty catalogs and database
+outages produce friendly responses without exposing exception details.
+
+Review `scripts/seed_services.py`, then manually run this command from the
+project root to insert the five fictional demo services into the database
+configured by `DATABASE_URL`:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.seed_services
+```
+
+This command writes to the configured database. It uses the existing session
+factory and a single transaction. The unique service name constraint and
+`ON CONFLICT DO NOTHING` prevent duplicates, including on repeated runs.
+Existing rows, prices, descriptions, and active flags are preserved. Seeding
+does not run when importing the module or starting the bot and is not part of
+an Alembic migration. No new migration or dependency is needed.
+
+Offline checks and local startup:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m compileall -q app scripts tests main.py
+.\.venv\Scripts\python.exe main.py
+```
+
+After manually seeding and starting the bot, send `/start` and press
+`🔧 Services & prices`. Automated seed tests use an isolated in-memory SQLite
+database; they never insert services into Supabase.

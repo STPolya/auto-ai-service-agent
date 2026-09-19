@@ -1,10 +1,12 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 
+SERVICES_BUTTON = "🔧 Services & prices"
+
 MENU_LABELS = (
     "🤖 Describe a problem",
     "📅 Book a service",
-    "🔧 Services & prices",
+    SERVICES_BUTTON,
     "📋 My appointments",
 )
 
