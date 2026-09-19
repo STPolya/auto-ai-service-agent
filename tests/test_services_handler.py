@@ -52,6 +52,8 @@ class ServicesHandlerTests(unittest.IsolatedAsyncioTestCase):
                             duration_minutes=35, description="Database description")]
 
         async def inspect_polling(dispatcher, bot, **kwargs):
+            self.assertIn(main.vehicles_router, dispatcher.sub_routers)
+            self.assertIsInstance(dispatcher.fsm.events_isolation, main.SimpleEventIsolation)
             with patch.object(Message, "answer", new_callable=AsyncMock) as answer:
                 await dispatcher.feed_update(bot, Update(update_id=1, message=self.message()))
                 answer.assert_awaited_once_with(

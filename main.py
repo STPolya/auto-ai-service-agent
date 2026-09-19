@@ -5,9 +5,11 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.utils.token import TokenValidationError
+from aiogram.fsm.storage.memory import SimpleEventIsolation
 
 from app.bot.handlers.start import router as start_router
 from app.bot.handlers.services import router as services_router
+from app.bot.handlers.vehicles import router as vehicles_router
 from app.config.settings import get_bot_token
 
 
@@ -21,7 +23,8 @@ async def main() -> None:
             "or your environment."
         ) from None
 
-    dispatcher = Dispatcher()
+    dispatcher = Dispatcher(events_isolation=SimpleEventIsolation())
+    dispatcher.include_router(vehicles_router)
     dispatcher.include_router(start_router)
     dispatcher.include_router(services_router)
 

@@ -8,22 +8,24 @@ incrementally.
 
 A minimal asynchronous Telegram bot built with aiogram 3 and python-dotenv.
 It runs locally using long polling and responds to `/start` with a welcome
-message and four reply keyboard buttons:
+message and five reply keyboard buttons:
 
 - 🤖 Describe a problem
 - 📅 Book a service
 - 🔧 Services & prices
+- 🚗 My vehicles
 - 📋 My appointments
 
-`/start` and `🔧 Services & prices` work. The other buttons remain placeholders.
+`/start`, `🔧 Services & prices`, and `🚗 My vehicles` work. The other buttons
+remain placeholders.
 
 The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
 models, psycopg 3, and Alembic migrations. Supabase is used only as PostgreSQL;
 there is no Supabase SDK. The schema contains users, vehicles, services, and
 appointments. On `/start`, the bot creates or updates the sender's user profile
 by Telegram ID before displaying the welcome message and menu. The service
-catalog reads active services from PostgreSQL. Vehicles and appointments are
-not used by bot flows yet.
+catalog reads active services from PostgreSQL. Users can list and add their own
+vehicles in private chat. Appointments are not used by bot flows yet.
 
 ## Planned future features
 
@@ -222,3 +224,38 @@ Offline checks and local startup:
 After manually seeding and starting the bot, send `/start` and press
 `🔧 Services & prices`. Automated seed tests use an isolated in-memory SQLite
 database; they never insert services into Supabase.
+
+### Vehicle management
+
+In a private chat, `🚗 My vehicles` lists only the sender's vehicles, ordered by
+ID, and provides an inline `➕ Add vehicle` button even when the list is empty.
+The add flow asks for brand, model, year, and optional license plate. Use `/skip`
+at the plate step or `/cancel` at any step. Brand/model are trimmed and must be
+1–100 characters. Year must be a four-digit integer between 1886 and the current
+UTC year plus one. Plate text is trimmed, limited to 64 characters, and has no
+country-specific validation.
+
+Draft values live only in aiogram's in-memory FSM (`brand`, `model`, `year`,
+`license_plate`); restarting the bot discards unfinished forms. `/cancel` clears
+the draft without saving. Opening My vehicles also clears an unfinished form.
+During entry, finish the current step or use `/cancel` before navigating away.
+The dispatcher serializes updates per conversation so repeated final replies
+cannot save the same draft twice. Saving clears the draft before database work;
+on failure, check My vehicles before starting again because a connection failure
+can leave the commit result uncertain. Completed vehicles remain in PostgreSQL.
+
+The vehicle service reuses `sync_user` to ensure the sender exists, resolves the
+owner by Telegram ID, and never accepts a database user ID from Telegram. All
+database work runs through `asyncio.to_thread`. No new migration is required.
+
+Manual verification (writes your vehicle to the configured database):
+
+1. Run the offline tests and start the bot using the commands above.
+2. Send `/start`, press `🚗 My vehicles`, then `➕ Add vehicle`.
+3. Enter `Toyota`, `Corolla`, an invalid year to check validation, then `2020`.
+4. Send `/skip` or enter a plate. Confirm the saved vehicle appears in My vehicles.
+5. Start another entry and send `/cancel`; verify no additional vehicle appears.
+6. From a different Telegram account, verify the first account's vehicles are hidden.
+
+Automated vehicle tests use an isolated in-memory database and mocked Telegram
+responses; they never create vehicles in Supabase.
