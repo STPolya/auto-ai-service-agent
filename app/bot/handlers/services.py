@@ -8,24 +8,25 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from app.bot.keyboards.main_menu import SERVICES_BUTTON
+from app.bot.presentation import service_name, service_description
 from app.database.models import Service
 from app.services.service_catalog import CatalogError, get_active_services
 
 router = Router(name="services")
 logger = logging.getLogger(__name__)
-EMPTY_MESSAGE = "No services are available right now. Please try again later."
-ERROR_MESSAGE = "Sorry, we can't load services right now. Please try again shortly."
+EMPTY_MESSAGE = "Сейчас нет доступных услуг. Пожалуйста, попробуйте позже."
+ERROR_MESSAGE = "Не удалось загрузить услуги. Попробуйте позже."
 
 
 def format_price(price: Decimal | None) -> str:
-    return "Price on request" if price is None else f"From €{price:.2f}"
+    return "Цена по запросу" if price is None else f"от €{price:.2f}"
 
 
 def format_service(service: Service) -> str:
-    lines = [f"🔧 {service.name}", format_price(service.price_from),
-             f"About {service.duration_minutes} min"]
+    lines = [f"🔧 {service_name(service.name)}", format_price(service.price_from),
+             f"Примерно {service.duration_minutes} мин"]
     if service.description:
-        lines.append(service.description)
+        lines.append(service_description(service.description))
     return "\n".join(lines)
 
 

@@ -1,17 +1,18 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 
-SERVICES_BUTTON = "🔧 Services & prices"
-VEHICLES_BUTTON = "🚗 My vehicles"
-BOOKING_BUTTON = "📅 Book a service"
-APPOINTMENTS_BUTTON = "📋 My appointments"
+SERVICES_BUTTON = "🔧 Услуги и цены"
+DIAGNOSTICS_BUTTON = "🤖 Описать проблему"
+VEHICLES_BUTTON = "🚗 Мои автомобили"
+BOOKING_BUTTON = "📅 Записаться на сервис"
+APPOINTMENTS_BUTTON = "📋 Мои записи"
 
 MENU_LABELS = (
-    "🤖 Describe a problem",
+    DIAGNOSTICS_BUTTON,
     BOOKING_BUTTON,
     SERVICES_BUTTON,
-    VEHICLES_BUTTON,
     APPOINTMENTS_BUTTON,
+    VEHICLES_BUTTON,
 )
 
 

@@ -21,10 +21,10 @@ def _selection(session: Session, telegram_id: int, vehicle_id: int, service_id: 
         .with_for_update(of=Vehicle)
     )
     if vehicle is None:
-        raise BookingValidationError("That vehicle is no longer available. Please restart booking.")
+        raise BookingValidationError("Этот автомобиль недоступен. Начните запись заново.")
     service = session.scalar(select(Service).where(Service.id == service_id, Service.is_active.is_(True)).with_for_update())
     if service is None:
-        raise BookingValidationError("That service is no longer available. Please restart booking.")
+        raise BookingValidationError("Эта услуга больше недоступна. Начните запись заново.")
     return vehicle, service
 
 

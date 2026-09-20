@@ -78,12 +78,12 @@ class VehiclesHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.list.side_effect = load
         await self.send(VEHICLES_BUTTON)
         self.assertNotEqual(thread, workers[0])
-        self.assertEqual(self.answer.await_args_list[0].args[0], "🚗 Toyota Corolla (2020)\nPlate: AB-123-CD")
+        self.assertEqual(self.answer.await_args_list[0].args[0], "🚗 Toyota Corolla (2020)\nГосномер: AB-123-CD")
         self.assertEqual(self.answer.await_args_list[-1].kwargs["reply_markup"], add_vehicle_keyboard())
 
     def test_nullable_vehicle_display(self):
         self.assertEqual(vehicles.format_vehicle(Vehicle(brand="Toyota", model="Corolla", year=None)),
-                         "🚗 Toyota Corolla (year not specified)\nPlate: not specified")
+                         "🚗 Toyota Corolla (год не указан)\nГосномер: не указан")
 
     async def test_complete_fsm_creates_once_and_trims_plate(self):
         await self.begin()
@@ -101,7 +101,7 @@ class VehiclesHandlerTests(unittest.IsolatedAsyncioTestCase):
                                            brand="Toyota", model="Corolla", year=2020, license_plate="AB-123-CD")
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
-        self.assertTrue(self.answer.await_args.args[0].startswith("Vehicle saved!"))
+        self.assertTrue(self.answer.await_args.args[0].startswith("Автомобиль добавлен ✅"))
 
     async def test_invalid_year_retains_step(self):
         await self.begin()
@@ -134,7 +134,7 @@ class VehiclesHandlerTests(unittest.IsolatedAsyncioTestCase):
         await self.send("/skip")
         self.assertIsNone(self.create.call_args.kwargs["license_plate"])
         self.assertNotEqual(thread, workers[0])
-        self.assertIn("Plate: not specified", self.answer.await_args.args[0])
+        self.assertIn("Госномер: не указан", self.answer.await_args.args[0])
 
     async def test_invalid_plate_keeps_step(self):
         await self.fill_to_plate()
@@ -148,7 +148,7 @@ class VehiclesHandlerTests(unittest.IsolatedAsyncioTestCase):
         await self.send("/cancel")
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
-        self.assertEqual(self.answer.await_args.args[0], "Vehicle entry cancelled.")
+        self.assertEqual(self.answer.await_args.args[0], "Добавление автомобиля отменено.")
         self.create.assert_not_called()
 
     async def test_save_failure_clears_state_without_success_or_secrets(self):

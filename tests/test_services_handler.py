@@ -22,9 +22,9 @@ class ServicesHandlerTests(unittest.IsolatedAsyncioTestCase):
                        chat=Chat(id=123, type="private"), text=text)
 
     def test_decimal_price_formatting(self):
-        self.assertEqual(format_price(Decimal("79")), "From €79.00")
-        self.assertEqual(format_price(Decimal("79.5")), "From €79.50")
-        self.assertEqual(format_price(None), "Price on request")
+        self.assertEqual(format_price(Decimal("79")), "от €79.00")
+        self.assertEqual(format_price(Decimal("79.5")), "от €79.50")
+        self.assertEqual(format_price(None), "Цена по запросу")
 
     async def test_empty_response(self):
         with patch("app.bot.handlers.services.get_active_services", return_value=[]):
@@ -55,11 +55,12 @@ class ServicesHandlerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(main.vehicles_router, dispatcher.sub_routers)
             self.assertIn(main.booking_router, dispatcher.sub_routers)
             self.assertIn(main.appointments_router, dispatcher.sub_routers)
+            self.assertIn(main.diagnostics_router, dispatcher.sub_routers)
             self.assertIsInstance(dispatcher.fsm.events_isolation, main.SimpleEventIsolation)
             with patch.object(Message, "answer", new_callable=AsyncMock) as answer:
                 await dispatcher.feed_update(bot, Update(update_id=1, message=self.message()))
                 answer.assert_awaited_once_with(
-                    "🔧 Test service\nFrom €12.50\nAbout 35 min\nDatabase description", parse_mode=None,
+                    "🔧 Test service\nот €12.50\nПримерно 35 мин\nDatabase description", parse_mode=None,
                 )
                 answer.reset_mock()
                 result = await dispatcher.feed_update(bot, Update(update_id=2, message=self.message("Services & prices")))
@@ -79,7 +80,7 @@ class ServicesHandlerTests(unittest.IsolatedAsyncioTestCase):
                 await handle_services(self.message())
                 chunks = [call.args[0] for call in answer.await_args_list]
                 self.assertTrue(all(len(chunk) <= 2000 for chunk in chunks))
-                self.assertEqual("".join(chunks), "🔧 Long\nPrice on request\nAbout 30 min\n" + "x" * 5000)
+                self.assertEqual("".join(chunks), "🔧 Long\nЦена по запросу\nПримерно 30 мин\n" + "x" * 5000)
 
 
 if __name__ == "__main__":

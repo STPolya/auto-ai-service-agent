@@ -10,14 +10,14 @@ A minimal asynchronous Telegram bot built with aiogram 3 and python-dotenv.
 It runs locally using long polling and responds to `/start` with a welcome
 message and five reply keyboard buttons:
 
-- 🤖 Describe a problem
-- 📅 Book a service
-- 🔧 Services & prices
-- 🚗 My vehicles
-- 📋 My appointments
+- 🤖 Описать проблему
+- 📅 Записаться на сервис
+- 🔧 Услуги и цены
+- 📋 Мои записи
+- 🚗 Мои автомобили
 
-`/start`, `🔧 Services & prices`, `🚗 My vehicles`, `📅 Book a service`, and
-`📋 My appointments` work. `🤖 Describe a problem` remains a placeholder.
+`/start` and all five menu buttons work, including the single-message
+`🤖 Описать проблему` AI assistant.
 
 The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
 models, psycopg 3, and Alembic migrations. Supabase is used only as PostgreSQL;
@@ -29,9 +29,8 @@ vehicles in private chat, book a service, and view upcoming appointments.
 
 ## Planned future features
 
-- AI car issue consultation
+- Multi-turn AI car issue consultation
 - Real appointment capacity and mechanic availability
-- Gemini integration
 - RAG knowledge base
 - Human handoff
 - CRM/admin dashboard
@@ -191,11 +190,11 @@ No new migration is needed for this integration.
 
 ### Service catalog and demo seed
 
-The `🔧 Services & prices` button calls `app/services/service_catalog.py` in a
+The `🔧 Услуги и цены` button calls `app/services/service_catalog.py` in a
 worker thread using `asyncio.to_thread`. It loads active services ordered by ID,
 closes the session, and displays each service's name, EUR price, duration, and
 optional description. Prices retain Decimal precision and show two decimal
-places; missing prices show `Price on request`. Empty catalogs and database
+places; missing prices show `Цена по запросу`. Empty catalogs and database
 outages produce friendly responses without exposing exception details.
 
 Review `scripts/seed_services.py`, then manually run this command from the
@@ -222,13 +221,13 @@ Offline checks and local startup:
 ```
 
 After manually seeding and starting the bot, send `/start` and press
-`🔧 Services & prices`. Automated seed tests use an isolated in-memory SQLite
+`🔧 Услуги и цены`. Automated seed tests use an isolated in-memory SQLite
 database; they never insert services into Supabase.
 
 ### Vehicle management
 
-In a private chat, `🚗 My vehicles` lists only the sender's vehicles, ordered by
-ID, and provides an inline `➕ Add vehicle` button even when the list is empty.
+In a private chat, `🚗 Мои автомобили` lists only the sender's vehicles, ordered by
+ID, and provides an inline `➕ Добавить автомобиль` button even when the list is empty.
 The add flow asks for brand, model, year, and optional license plate. Use `/skip`
 at the plate step or `/cancel` at any step. Brand/model are trimmed and must be
 1–100 characters. Year must be a four-digit integer between 1886 and the current
@@ -237,11 +236,11 @@ country-specific validation.
 
 Draft values live only in aiogram's in-memory FSM (`brand`, `model`, `year`,
 `license_plate`); restarting the bot discards unfinished forms. `/cancel` clears
-the draft without saving. Opening My vehicles also clears an unfinished form.
+the draft without saving. Opening Мои автомобили also clears an unfinished form.
 During entry, finish the current step or use `/cancel` before navigating away.
 The dispatcher serializes updates per conversation so repeated final replies
 cannot save the same draft twice. Saving clears the draft before database work;
-on failure, check My vehicles before starting again because a connection failure
+on failure, check Мои автомобили before starting again because a connection failure
 can leave the commit result uncertain. Completed vehicles remain in PostgreSQL.
 
 The vehicle service reuses `sync_user` to ensure the sender exists, resolves the
@@ -251,9 +250,9 @@ database work runs through `asyncio.to_thread`. No new migration is required.
 Manual verification (writes your vehicle to the configured database):
 
 1. Run the offline tests and start the bot using the commands above.
-2. Send `/start`, press `🚗 My vehicles`, then `➕ Add vehicle`.
+2. Send `/start`, press `🚗 Мои автомобили`, then `➕ Добавить автомобиль`.
 3. Enter `Toyota`, `Corolla`, an invalid year to check validation, then `2020`.
-4. Send `/skip` or enter a plate. Confirm the saved vehicle appears in My vehicles.
+4. Send `/skip` or enter a plate. Confirm the saved vehicle appears in Мои автомобили.
 5. Start another entry and send `/cancel`; verify no additional vehicle appears.
 6. From a different Telegram account, verify the first account's vehicles are hidden.
 
@@ -262,25 +261,34 @@ responses; they never create vehicles in Supabase.
 
 ### Appointment booking
 
-In private chat, press `📅 Book a service`, select one of your vehicles, then an
+In private chat, press `📅 Записаться на сервис`, select one of your vehicles, then an
 active service. If you have no vehicles, the bot offers the existing add-vehicle
-flow. Enter a date as `DD.MM.YYYY`, followed by a time as `HH:MM`, review the
-vehicle/service/price/date/time summary, and press `✅ Confirm`. An Appointment
+flow. Enter a date as `DD.MM.YYYY`, choose a time using inline buttons, review the
+vehicle/service/price/date/time summary, and press `✅ Подтвердить`. An Appointment
 is inserted only after confirmation, with status `scheduled` and no problem
-description. `/cancel` during booking or `❌ Cancel` on the review screen clears
+description. `/cancel` during booking or `❌ Отменить` on the review screen clears
 the draft without saving. Vehicle `/cancel` continues to work independently.
 
-Dates and times use the explicit `Europe/Amsterdam` timezone via standard-library
-`zoneinfo`, including daylight-saving changes. Dates must be real, today or later,
+Dates and times use the explicit `Europe/Moscow` timezone via standard-library
+`zoneinfo`, centralized in `app/services/booking_rules.py`; the display label is
+`МСК`. Dates must be real, today or later,
 and no more than 90 days ahead (inclusive). Starts are allowed every 30 minutes
 from 09:00 through 17:30; 18:00 is closing time, not a valid start. Today's starts
 must still be in the future. The same rules are checked again on confirmation.
 These MVP rules apply every day and constrain start times only; they do not
 model weekends, holidays, service-duration capacity, or mechanic schedules.
-No free slot is guaranteed. Real availability is a future feature.
+Real availability is a future feature. The customer interface uses neutral time
+options and says a manager will contact the customer to confirm the booking and
+details; it does not display technical capacity/MVP disclaimers.
 
-`📋 My appointments` shows only the sender's upcoming appointments, ordered by
-date/time and then ID, with vehicle, service, Amsterdam date/time, and status.
+The time keyboard has 18 half-hour options, excluding passed times for today.
+If no times remain today, the FSM returns to the date step. A `📅 Другая дата`
+button also lets the user change dates. Every time callback is validated again;
+changing the date rotates the draft token so earlier buttons cannot select a
+time for a different date. Typed times do not advance the conversation.
+
+`📋 Мои записи` shows only the sender's upcoming appointments, ordered by
+date/time and then ID, with vehicle, service, Moscow date/time, and status.
 Opening this list abandons any unfinished draft. Appointment cancellation and
 rescheduling are not implemented.
 
@@ -295,7 +303,7 @@ are rejected. Existing per-conversation event isolation plus clearing FSM state
 before confirmation I/O prevents repeated confirm callbacks from saving the
 same in-memory draft twice. This is not distributed or restart-safe idempotency;
 stronger persistence/database guarantees will be needed later. After a save
-error the draft is cleared, and the bot asks users to check My appointments
+error the draft is cleared, and the bot asks users to check Мои записи
 before retrying because a connection failure can make the commit outcome unclear.
 
 Manual verification after running the offline tests:
@@ -307,12 +315,102 @@ Manual verification after running the offline tests:
 ```
 
 1. Send `/start` and ensure your account has a vehicle and the catalog has an active service.
-2. Press `📅 Book a service` and select your vehicle and a service.
-3. Enter an upcoming date within 90 days, try `14:15` to check rejection, then `14:30`.
-4. Review and cancel once; verify My appointments has no new entry.
-5. Repeat and confirm; verify one entry in `📋 My appointments` at the Amsterdam time.
+2. Press `📅 Записаться на сервис` and select your vehicle and a service.
+3. Enter an upcoming date within 90 days and select `14:30` using its button.
+4. Review and cancel once; verify Мои записи has no new entry.
+5. Repeat and confirm; verify one entry in `📋 Мои записи` at the Moscow time.
 6. Check from another Telegram account that the vehicle and appointment remain private.
 
 Manual confirmation writes to the configured database. Automated tests use only
 isolated SQLite databases and mocks with fixed dates; they never create
 appointments in Supabase. Real PostgreSQL connectivity is not exercised by them.
+
+### Gemini diagnostic assistant (MVP, without RAG)
+
+Press `🤖 Описать проблему` in a private chat and describe the symptoms in one
+text message (1–3000 characters). The description is sent to the Gemini API.
+The response is in Russian, with `Возможные причины`, `Вопросы`, and
+`Рекомендация` sections. Afterwards the bot offers the existing booking menu;
+it never creates an appointment automatically. `/cancel` while waiting for a
+description clears the diagnostic FSM without making an API call.
+
+Set `GEMINI_API_KEY` privately in your existing `.env` or environment. The key
+is loaded through `get_gemini_api_key()` in the existing settings module only
+when diagnostics are requested. Do not overwrite your existing `.env` with the
+example, and never commit or share the key. Without this variable the other
+features still work; diagnostic requests receive a friendly unavailable message.
+
+The new pinned dependency `google-genai==2.24.0` is Google's official Gemini
+Python SDK. See the [SDK documentation](https://googleapis.github.io/python-genai/).
+The client uses concrete Gemini models: `gemini-3.8-flash` as primary and
+`gemini-3.5-flash` as fallback, without moving aliases. Model names are centralized in
+`app/ai/client.py`. Each call uses a context-managed synchronous client with a
+30-second HTTP timeout per attempt and a bounded JSON response. No tools or chat sessions
+are enabled. `asyncio.to_thread()` keeps SDK work off the Telegram event loop.
+
+Temporary API status codes 408, 429, 500, 502, 503, and 504 trigger at most two
+additional attempts, after 1 and 2 seconds. SDK retries are explicitly disabled
+to prevent nested retries. Only a final HTTP 503 after primary retries activates
+the fallback, which uses the same retry policy and request configuration.
+Authentication, invalid requests, transport errors,
+and invalid output are not retried. Warning logs contain only fixed failure
+categories, numeric HTTP status when available, and attempt counts; exception
+text, keys, and request contents are omitted. Persistent outages still produce
+the existing friendly unavailable response.
+
+The small JSON schema is retained to keep the three Russian sections predictable
+and bounded. Invalid or empty output fails safely without model fallback;
+the schema is not a guarantee of diagnostic accuracy or provider availability.
+
+Flow: Telegram handler → AI service → Gemini client → Gemini API. The system
+prompt and response schema live in `app/ai/prompts.py`. The service validates
+the response and formats short Russian sections as plain text. The prompt asks
+for possible causes and clarifying questions, avoids certainty and dangerous
+mechanical instructions, and prioritizes professional help for brakes, steering,
+smoke, or fuel leaks and emergency help for immediate danger. AI output is
+preliminary guidance, not a guaranteed diagnosis; prompt rules are not a formal
+safety guarantee.
+
+This is one message → one response: no conversation history is stored in
+PostgreSQL or reused in subsequent requests. There is no RAG, vector database,
+voice, or fine-tuning. Provider errors, blocked/empty output, and invalid output
+produce a friendly error and a sanitized server log. After failure, reopen the
+diagnostic menu to try again; the draft is cleared and no success/follow-up is sent.
+
+Install and verify locally:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m compileall -q app scripts tests main.py
+.\.venv\Scripts\python.exe main.py
+```
+
+After setting your key locally, press `🤖 Описать проблему`, send a car symptom,
+and check the three Russian sections and booking suggestion. Open the flow
+again and send `/cancel` to verify cancellation. Manual diagnostic requests call
+Gemini and may consume API quota; automated tests mock the SDK and never call
+Gemini or Supabase. No migration is required.
+
+### Russian Telegram UI and welcome image
+
+All application-owned Telegram UI is in Russian: menus, prompts, validation,
+cancellation, empty/error states, booking review, and success messages. Database
+status values remain unchanged; presentation maps them to Russian labels.
+
+The five original English seed names/descriptions are translated for display in
+`app/bot/presentation.py`, reused by the catalog, booking, and appointment list.
+The seed script and persisted rows remain unchanged, preserving their unique
+names and preventing duplicates. **No reseeding or data migration is needed.**
+Custom database names/descriptions are preserved rather than guessed; enter any
+future custom catalog content in Russian or extend the explicit presentation map.
+
+Optionally place your own welcome image at `assets/welcome.png` in the project
+root. `WELCOME_IMAGE_PATH` in `app/bot/handlers/start.py` resolves it independently
+of the working directory. `/start` sends the image with the complete Russian
+welcome text as its caption and the main menu, without a second copy of the text.
+If the file is absent, `/start` sends the same text and menu normally. No image
+has been generated, downloaded, or supplied by the application.
+
+Existing PostgreSQL timestamps remain the same instants; they are now displayed
+in Moscow time rather than Amsterdam time. No stored appointments are rewritten.

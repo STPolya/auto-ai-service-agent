@@ -19,21 +19,21 @@ router = Router(name="vehicles")
 router.message.filter(F.chat.type == "private")
 router.callback_query.filter(F.message.chat.type == "private")
 logger = logging.getLogger(__name__)
-EMPTY_MESSAGE = "You haven't added any vehicles yet."
-ERROR_MESSAGE = "Sorry, we're having a temporary technical problem. Please try again shortly."
+EMPTY_MESSAGE = "У вас пока нет добавленных автомобилей."
+ERROR_MESSAGE = "Сервис временно недоступен. Попробуйте позже."
 SAVE_ERROR_MESSAGE = (
-    "Sorry, we couldn't confirm that your vehicle was saved. "
-    "Please check My vehicles before starting again."
+    "Не удалось подтвердить сохранение автомобиля. "
+    "Проверьте раздел «🚗 Мои автомобили», прежде чем повторить попытку."
 )
-BRAND_PROMPT = "What is your vehicle's brand? Send /cancel at any time to cancel."
-MODEL_PROMPT = "What is the vehicle model?"
-YEAR_PROMPT = "What year is the vehicle?"
-PLATE_PROMPT = "What is the license plate? Send /skip to leave it unspecified."
+BRAND_PROMPT = "Введите марку автомобиля. Для отмены в любой момент отправьте /cancel."
+MODEL_PROMPT = "Введите модель автомобиля."
+YEAR_PROMPT = "Введите год выпуска автомобиля."
+PLATE_PROMPT = "Введите госномер автомобиля или отправьте /skip, чтобы пропустить."
 
 
 def format_vehicle(vehicle: Vehicle) -> str:
-    year = str(vehicle.year) if vehicle.year is not None else "year not specified"
-    return f"🚗 {vehicle.brand} {vehicle.model} ({year})\nPlate: {vehicle.license_plate or 'not specified'}"
+    year = str(vehicle.year) if vehicle.year is not None else "год не указан"
+    return f"🚗 {vehicle.brand} {vehicle.model} ({year})\nГосномер: {vehicle.license_plate or 'не указан'}"
 
 
 def profile(message: Message) -> dict:
@@ -51,7 +51,7 @@ def normalized_text(message: Message) -> str:
 async def cancel_vehicle(message: Message, state: FSMContext) -> None:
     active = await state.get_state()
     await state.clear()
-    await message.answer("Vehicle entry cancelled." if active else "No vehicle entry is in progress.",
+    await message.answer("Добавление автомобиля отменено." if active else "Сейчас нечего отменять.",
                          reply_markup=main_menu_keyboard())
 
 
@@ -60,7 +60,7 @@ async def show_vehicles(message: Message, state: FSMContext) -> None:
     # Opening the list deliberately abandons an unfinished form.
     await state.clear()
     if message.from_user is None:
-        await message.answer("Please open a private chat with this bot and send /start.")
+        await message.answer("Откройте личный чат с ботом и отправьте /start.")
         return
     try:
         vehicles = await asyncio.to_thread(list_vehicles, **profile(message))
@@ -73,7 +73,7 @@ async def show_vehicles(message: Message, state: FSMContext) -> None:
         return
     for vehicle in vehicles:
         await message.answer(format_vehicle(vehicle), parse_mode=None)
-    await message.answer("Add another vehicle:", reply_markup=add_vehicle_keyboard())
+    await message.answer("Вы можете добавить ещё один автомобиль:", reply_markup=add_vehicle_keyboard())
 
 
 @router.callback_query(F.data == ADD_VEHICLE_CALLBACK)
@@ -82,7 +82,7 @@ async def begin_vehicle(callback: CallbackQuery, state: FSMContext) -> None:
     if not isinstance(callback.message, Message):
         return
     if await state.get_state() is not None:
-        await callback.message.answer("A vehicle entry is already in progress. Continue or send /cancel.")
+        await callback.message.answer("Вы уже заполняете данные. Продолжите или отправьте /cancel для отмены.")
         return
     await state.set_state(AddVehicle.brand)
     await callback.message.answer(BRAND_PROMPT, reply_markup=ReplyKeyboardRemove())
@@ -92,7 +92,7 @@ async def begin_vehicle(callback: CallbackQuery, state: FSMContext) -> None:
 async def receive_brand(message: Message, state: FSMContext) -> None:
     value = normalized_text(message)
     if not 1 <= len(value) <= 100:
-        await message.answer("Enter a brand using 1–100 characters, or send /cancel.")
+        await message.answer("Введите марку длиной от 1 до 100 символов или отправьте /cancel.")
         return
     await state.update_data(brand=value)
     await state.set_state(AddVehicle.model)
@@ -103,7 +103,7 @@ async def receive_brand(message: Message, state: FSMContext) -> None:
 async def receive_model(message: Message, state: FSMContext) -> None:
     value = normalized_text(message)
     if not 1 <= len(value) <= 100:
-        await message.answer("Enter a model using 1–100 characters, or send /cancel.")
+        await message.answer("Введите модель длиной от 1 до 100 символов или отправьте /cancel.")
         return
     await state.update_data(model=value)
     await state.set_state(AddVehicle.year)
@@ -115,7 +115,7 @@ async def receive_year(message: Message, state: FSMContext) -> None:
     value = normalized_text(message)
     maximum = datetime.now(timezone.utc).year + 1
     if not value.isascii() or not value.isdigit() or len(value) != 4 or not 1886 <= int(value) <= maximum:
-        await message.answer(f"Enter a whole-number year from 1886 to {maximum}, or send /cancel.")
+        await message.answer(f"Введите год целым числом от 1886 до {maximum} или отправьте /cancel.")
         return
     await state.update_data(year=int(value))
     await state.set_state(AddVehicle.license_plate)
@@ -128,7 +128,7 @@ async def save_vehicle(message: Message, state: FSMContext, plate: str | None) -
     # Dispatcher event isolation serializes updates so a queued reply cannot save twice.
     await state.clear()
     if message.from_user is None:
-        await message.answer("Please send /start and try adding your vehicle again.", reply_markup=main_menu_keyboard())
+        await message.answer("Отправьте /start и попробуйте добавить автомобиль снова.", reply_markup=main_menu_keyboard())
         return
     try:
         vehicle = await asyncio.to_thread(create_vehicle, **profile(message), **data, license_plate=plate)
@@ -136,7 +136,7 @@ async def save_vehicle(message: Message, state: FSMContext, plate: str | None) -
         logger.error("Vehicle saving failed; database operation unavailable.")
         await message.answer(SAVE_ERROR_MESSAGE, reply_markup=main_menu_keyboard())
         return
-    await message.answer("Vehicle saved!\n\n" + format_vehicle(vehicle),
+    await message.answer("Автомобиль добавлен ✅\n\n" + format_vehicle(vehicle),
                          reply_markup=main_menu_keyboard(), parse_mode=None)
 
 
@@ -149,6 +149,6 @@ async def skip_plate(message: Message, state: FSMContext) -> None:
 async def receive_plate(message: Message, state: FSMContext) -> None:
     value = normalized_text(message)
     if not 1 <= len(value) <= 64:
-        await message.answer("Enter a plate using 1–64 characters, or send /skip to omit it.")
+        await message.answer("Введите госномер длиной от 1 до 64 символов или отправьте /skip, чтобы пропустить.")
         return
     await save_vehicle(message, state, value)

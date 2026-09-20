@@ -1,9 +1,10 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from aiogram import Router
 from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.types import FSInputFile, Message
 
 from app.bot.keyboards.main_menu import main_menu_keyboard
 from app.services.user_service import UserSyncError, sync_user
@@ -12,16 +13,15 @@ from app.services.user_service import UserSyncError, sync_user
 router = Router(name="start")
 logger = logging.getLogger(__name__)
 
-SYNC_ERROR_MESSAGE = "Sorry, we're having a temporary technical problem. Please try /start again shortly."
-MISSING_USER_MESSAGE = "Please open a private chat with this bot and send /start."
+SYNC_ERROR_MESSAGE = "Сервис временно недоступен. Попробуйте отправить /start позже."
+MISSING_USER_MESSAGE = "Откройте личный чат с ботом и отправьте /start."
+WELCOME_IMAGE_PATH = Path(__file__).resolve().parents[3] / "assets" / "welcome.png"
 
 WELCOME_MESSAGE = (
-    "Welcome to AutoCare! 🚗\n\n"
-    "I'm your car service AI assistant in development. Soon I'll help you "
-    "explore possible causes of car problems, learn about our services "
-    "and prices, and make service appointments.\n\n"
-    "This is our first prototype: the menu below is a preview, "
-    "and its features are coming soon."
+    "Добро пожаловать в AutoCare! 🚗\n\n"
+    "Я — AI-помощник автосервиса. Помогу разобраться в возможных причинах неисправности "
+    "автомобиля, расскажу об услугах и ценах, а также помогу оформить запись на обслуживание.\n\n"
+    "Выберите нужный раздел в меню ниже 👇"
 )
 
 
@@ -45,4 +45,8 @@ async def handle_start(message: Message) -> None:
         await message.answer(SYNC_ERROR_MESSAGE)
         return
 
-    await message.answer(WELCOME_MESSAGE, reply_markup=main_menu_keyboard())
+    if WELCOME_IMAGE_PATH.is_file():
+        await message.answer_photo(FSInputFile(WELCOME_IMAGE_PATH), caption=WELCOME_MESSAGE,
+                                   reply_markup=main_menu_keyboard())
+    else:
+        await message.answer(WELCOME_MESSAGE, reply_markup=main_menu_keyboard())

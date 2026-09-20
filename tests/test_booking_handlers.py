@@ -71,7 +71,7 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
 
     async def to_confirmation(self):
         await self.to_time()
-        await self.send("14:30")
+        await self.callback("time", 870)
 
     async def test_no_vehicles_opens_existing_add_flow_without_booking_state(self):
         self.vehicles.return_value = []
@@ -92,12 +92,17 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.state.get_state(), Booking.date.state)
         await self.send("25.09.2026")
         self.assertEqual(await self.state.get_state(), Booking.time.state)
-        await self.send("14:30")
+        await self.callback("time", 870)
         self.assertEqual(await self.state.get_state(), Booking.confirmation.state)
         self.create.assert_not_called()
         summary = self.answer.await_args.args[0]
-        for text in ("Toyota Corolla (2020)", "Oil change", "€79.00", "25.09.2026", "14:30", "Europe/Amsterdam"):
+        for text in ("Toyota Corolla (2020)", "Замена масла", "€79.00", "25.09.2026", "14:30", "МСК"):
             self.assertIn(text, summary)
+        self.assertNotIn("MVP", summary)
+        self.assertNotIn("capacity", summary)
+        self.assertNotIn("слот", summary)
+        buttons = self.answer.await_args.kwargs["reply_markup"].inline_keyboard[0]
+        self.assertEqual([b.text for b in buttons], ["✅ Подтвердить", "❌ Отменить"])
 
     async def test_invalid_date_and_time_keep_steps(self):
         await self.send(BOOKING_BUTTON)
@@ -106,7 +111,7 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
         await self.send("31.09.2026")
         self.assertEqual(await self.state.get_state(), Booking.date.state)
         await self.send("25.09.2026")
-        await self.send("14:15")
+        await self.callback("time", 855)
         self.assertEqual(await self.state.get_state(), Booking.time.state)
         self.create.assert_not_called()
 
@@ -121,10 +126,10 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
         for identifier in (2, 999):
             await self.send(BOOKING_BUTTON)
             await self.callback("vehicle")
-            self.selection.side_effect = BookingValidationError("That service is no longer available. Please restart booking.")
+            self.selection.side_effect = BookingValidationError("Эта услуга больше недоступна. Начните запись заново.")
             await self.callback("service", identifier)
             self.assertIsNone(await self.state.get_state())
-            self.assertIn("no longer available", self.answer.await_args.args[0])
+            self.assertIn("недоступна", self.answer.await_args.args[0])
         self.create.assert_not_called()
 
     async def test_no_active_services_clears_draft(self):
@@ -132,7 +137,7 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
         await self.send(BOOKING_BUTTON)
         await self.callback("vehicle")
         self.assertIsNone(await self.state.get_state())
-        self.assertIn("No active services", self.answer.await_args.args[0])
+        self.assertIn("нет доступных услуг", self.answer.await_args.args[0])
 
     async def test_confirmation_creates_once_with_aware_time_on_worker_thread(self):
         await self.to_confirmation()
@@ -145,6 +150,7 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(workers[0], threading.get_ident())
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
+        self.assertIn("Наш менеджер свяжется с вами для подтверждения записи", self.answer.await_args.args[0])
 
     async def test_old_confirm_cannot_confirm_new_draft(self):
         await self.to_confirmation()
@@ -164,7 +170,7 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.state.get_data(), {})
         self.assertIsNone(await self.state.get_state())
         self.create.assert_not_called()
-        self.assertEqual(self.answer.await_args.args[0], "Booking cancelled.")
+        self.assertEqual(self.answer.await_args.args[0], "Запись отменена.")
 
     async def test_save_failure_is_safe_and_never_success(self):
         await self.to_confirmation()
@@ -191,15 +197,66 @@ class BookingHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.answer.await_args.args[0], appointments.ERROR_MESSAGE)
         self.assertNotIn("private-detail", " ".join(logs.output))
 
-    async def test_upcoming_display_uses_amsterdam(self):
+    async def test_upcoming_display_uses_moscow(self):
         self.upcoming.return_value = [Appointment(
             vehicle=self.vehicle, service=self.service, status="scheduled",
             appointment_at=datetime(2026, 9, 25, 12, 30, tzinfo=timezone.utc),
         )]
         await appointments.show_appointments(self.message(APPOINTMENTS_BUTTON), self.state)
         self.upcoming.assert_called_once_with(100)
-        for text in ("Toyota Corolla", "Oil change", "25.09.2026", "14:30", "scheduled"):
+        for text in ("Toyota Corolla", "Замена масла", "25.09.2026", "15:30", "Ожидает подтверждения менеджером", "МСК"):
             self.assertIn(text, self.answer.await_args.args[0])
+        self.assertNotIn("scheduled", self.answer.await_args.args[0])
+
+    async def test_time_keyboard_and_manual_time_does_not_advance(self):
+        await self.to_time()
+        self.assertEqual(self.answer.await_args.args[0], "Выберите удобное время (МСК):")
+        buttons = [b for row in self.answer.await_args.kwargs["reply_markup"].inline_keyboard for b in row]
+        self.assertEqual([b.text for b in buttons[:-1]], [f"{h:02}:{m:02}" for h in range(9, 18) for m in (0, 30)])
+        self.assertTrue(all(":time:" in b.callback_data for b in buttons[:-1]))
+        await self.send("14:30")
+        self.assertEqual(await self.state.get_state(), Booking.time.state)
+        self.create.assert_not_called()
+
+    async def test_no_times_today_returns_to_date_step_and_accepts_tomorrow(self):
+        await self.to_time()
+        await self.callback("date", 0)
+        with patch("app.services.booking_rules.local_now", return_value=NOW.replace(hour=18)):
+            await self.send("19.09.2026")
+            self.assertEqual(await self.state.get_state(), Booking.date.state)
+            self.assertIn(booking.NO_TIMES_MESSAGE, self.answer.await_args.args[0])
+            await self.send("20.09.2026")
+        self.assertEqual(await self.state.get_state(), Booking.time.state)
+
+    async def test_past_or_forged_time_callback_is_rejected(self):
+        await self.to_time()
+        for minutes in (510, 855, 1080, 99999999):
+            await self.callback("time", minutes)
+            self.assertEqual(await self.state.get_state(), Booking.time.state)
+        await self.callback("date", 0)
+        await self.send("19.09.2026")
+        with patch("app.services.booking_rules.local_now", return_value=NOW.replace(hour=10)):
+            await self.callback("time", 540)
+            self.assertEqual(await self.state.get_state(), Booking.time.state)
+        self.create.assert_not_called()
+
+    async def test_time_callback_after_last_start_recovers_to_date_step(self):
+        await self.to_time()
+        await self.callback("date", 0)
+        await self.send("19.09.2026")
+        with patch("app.services.booking_rules.local_now", return_value=NOW.replace(hour=18)):
+            await self.callback("time", 1050)
+        self.assertEqual(await self.state.get_state(), Booking.date.state)
+        self.assertIn(booking.NO_TIMES_MESSAGE, self.answer.await_args.args[0])
+
+    async def test_time_button_from_previous_date_is_stale(self):
+        await self.to_time()
+        token = (await self.state.get_data())["token"]
+        await self.callback("date", 0)
+        await self.send("26.09.2026")
+        await self.callback("time", 870, token=token)
+        self.assertEqual(await self.state.get_state(), Booking.time.state)
+        self.callback_answer.assert_awaited_with(booking.STALE_MESSAGE)
 
     async def test_concurrent_confirmations_create_once(self):
         await self.to_confirmation()

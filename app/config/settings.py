@@ -23,3 +23,8 @@ def get_bot_token() -> str:
 def get_database_url() -> str:
     """Require database configuration only when database functionality is used."""
     return _required_environment("DATABASE_URL")
+
+
+def get_gemini_api_key() -> str:
+    """Require the Gemini key only when diagnostics are requested."""
+    return _required_environment("GEMINI_API_KEY")
