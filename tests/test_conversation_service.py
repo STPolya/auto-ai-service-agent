@@ -29,6 +29,9 @@ class ConversationTests(unittest.TestCase):
         patcher = patch("app.services.conversation_service.diagnose_problem", return_value="Ответ на вопрос")
         self.ai = patcher.start()
         self.addCleanup(patcher.stop)
+        patcher = patch("app.services.conversation_service.retrieve_context", return_value=[])
+        self.retrieve = patcher.start()
+        self.addCleanup(patcher.stop)
         self.conversation = service.create_conversation(100, None, "Alex")
 
     def messages(self):
@@ -49,7 +52,7 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(service.diagnostic_turn(100, self.conversation, "  Вибрация  "), "Ответ на вопрос")
         self.assertEqual([(m.role, m.content) for m in self.messages()],
                          [("user", "Вибрация"), ("assistant", "Ответ на вопрос")])
-        self.ai.assert_called_once_with([{"role": "user", "content": "Вибрация"}])
+        self.ai.assert_called_once_with([{"role": "user", "content": "Вибрация"}], knowledge=[])
 
     def test_second_turn_uses_previous_context(self):
         service.diagnostic_turn(100, self.conversation, "Вибрация при торможении")
@@ -58,7 +61,7 @@ class ConversationTests(unittest.TestCase):
             {"role": "user", "content": "Вибрация при торможении"},
             {"role": "assistant", "content": "Ответ на вопрос"},
             {"role": "user", "content": "После 80 км/ч"},
-        ])
+        ], knowledge=[])
 
     def test_failed_provider_persists_only_user_and_conversation_remains_usable(self):
         self.ai.side_effect = DiagnosticError("provider failed")
@@ -69,7 +72,37 @@ class ConversationTests(unittest.TestCase):
         service.diagnostic_turn(100, self.conversation, "При торможении")
         self.assertEqual(len(self.messages()), 3)
         self.ai.assert_called_with([{"role": "user", "content": "Вибрация"},
-                                    {"role": "user", "content": "При торможении"}])
+                                    {"role": "user", "content": "При торможении"}], knowledge=[])
+
+    def test_rag_uses_only_current_query_and_does_not_persist_chunks(self):
+        from app.rag.types import KnowledgeItem
+        knowledge = [KnowledgeItem("brakes.md", "Тормоза", "Справочные сведения", "brakes")]
+        self.retrieve.return_value = knowledge
+        service.diagnostic_turn(100, self.conversation, "Вибрация")
+        service.diagnostic_turn(100, self.conversation, "При торможении")
+        self.assertEqual([call.args for call in self.retrieve.call_args_list], [("Вибрация",), ("При торможении",)])
+        self.ai.assert_called_with([
+            {"role": "user", "content": "Вибрация"},
+            {"role": "assistant", "content": "Ответ на вопрос"},
+            {"role": "user", "content": "При торможении"},
+        ], knowledge=knowledge)
+        self.assertEqual(len(self.messages()), 4)
+        self.assertNotIn("Справочные сведения", [row.content for row in self.messages()])
+
+    def test_retrieval_failure_logs_safely_and_continues_without_rag(self):
+        from app.rag.retriever import RetrievalError
+        self.retrieve.side_effect = RetrievalError("private SQL or credentials")
+        with self.assertLogs("app.services.conversation_service", level="WARNING") as logs:
+            self.assertEqual(service.diagnostic_turn(100, self.conversation, "private symptom"), "Ответ на вопрос")
+        self.assertNotIn("private", " ".join(logs.output))
+        self.ai.assert_called_once_with([{"role": "user", "content": "private symptom"}], knowledge=[])
+        self.assertEqual(len(self.messages()), 2)
+
+    def test_retrieval_programming_errors_are_not_swallowed(self):
+        self.retrieve.side_effect = TypeError("programming error")
+        with self.assertRaises(TypeError):
+            service.diagnostic_turn(100, self.conversation, "Вибрация")
+        self.ai.assert_not_called()
 
     def test_context_limit_order_and_conversation_isolation(self):
         second = service.create_conversation(100, None, "Alex")

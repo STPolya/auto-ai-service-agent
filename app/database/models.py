@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, String, Text, func, true
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Numeric, String, Text, func, true, literal_column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import to_tsvector
 
 from app.database.base import Base
 
@@ -92,3 +93,29 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(100))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+def knowledge_search_vector():
+    """Use exactly the same expression for the PostgreSQL index and retrieval."""
+    return to_tsvector(
+        literal_column("'russian'::regconfig"),
+        KnowledgeChunk.title + literal_column("' '") + KnowledgeChunk.content,
+    )
+
+
+KnowledgeChunk.__table__.append_constraint(Index(
+    "ix_knowledge_chunks_search", knowledge_search_vector(),
+    postgresql_using="gin", postgresql_where=KnowledgeChunk.is_active.is_(True),
+).ddl_if(dialect="postgresql"))

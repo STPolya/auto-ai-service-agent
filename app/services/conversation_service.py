@@ -1,5 +1,7 @@
 """Persistent diagnostic turns. No transaction is held during provider I/O."""
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -8,8 +10,10 @@ from app.ai.service import diagnose_problem, validate_problem
 from app.database.models import Conversation, Message, User
 from app.database.session import get_session_factory
 from app.services.user_service import UserSyncError, sync_user
+from app.rag.retriever import RetrievalError, retrieve_context
 
 MAX_CONTEXT_MESSAGES = 10
+logger = logging.getLogger(__name__)
 
 
 class ConversationError(RuntimeError):
@@ -69,6 +73,11 @@ def diagnostic_turn(telegram_id: int, conversation_id: int, problem: str) -> str
     append_message(telegram_id, conversation_id, "user", problem)
     # The current message is already in persisted history; never append it again.
     history = recent_messages(telegram_id, conversation_id)
-    answer = diagnose_problem(history)
+    try:
+        knowledge = retrieve_context(problem)
+    except RetrievalError:
+        logger.warning("Knowledge retrieval failed: category=database_or_search; continuing without knowledge.")
+        knowledge = []
+    answer = diagnose_problem(history, knowledge=knowledge)
     append_message(telegram_id, conversation_id, "assistant", answer)
     return answer

@@ -96,6 +96,7 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.diagnose.side_effect = conversation_service.diagnostic_turn
         with patch("app.services.conversation_service.get_session_factory", return_value=factory), \
              patch("app.services.user_service.get_session_factory", return_value=factory), \
+             patch("app.services.conversation_service.retrieve_context", return_value=[]), \
              patch("app.services.conversation_service.diagnose_problem", return_value="Ответ"):
             await self.send(DIAGNOSTICS_BUTTON)
             first_id = (await self.state.get_data())["diagnostic_conversation_id"]

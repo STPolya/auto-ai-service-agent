@@ -4,7 +4,8 @@ import json
 
 from app.ai.client import GeminiError, generate_response
 from app.ai.history import HistoryMessage
-from app.ai.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.ai.prompts import build_user_prompt, with_knowledge_context
+from app.rag.types import KnowledgeItem
 
 MAX_PROBLEM_LENGTH = 3000
 SECTIONS = (
@@ -29,14 +30,14 @@ def validate_problem(problem: str) -> str:
     return problem
 
 
-def diagnose_problem(history: list[HistoryMessage] | str) -> str:
+def diagnose_problem(history: list[HistoryMessage] | str, *, knowledge: list[KnowledgeItem] | None = None) -> str:
     # Keep the single-description entry point usable for non-conversation callers.
     if isinstance(history, str):
         history = build_user_prompt(validate_problem(history))
     elif not history or history[-1]["role"] != "user":
         raise DiagnosticInputError("Добавьте сообщение с описанием проблемы.")
     try:
-        raw = generate_response(SYSTEM_PROMPT, history)
+        raw = generate_response(with_knowledge_context(knowledge or []), history)
         payload = json.loads(raw)
         if not isinstance(payload, dict):
             raise ValueError

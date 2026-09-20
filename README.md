@@ -21,17 +21,17 @@ message and five reply keyboard buttons:
 
 The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
 models, psycopg 3, and Alembic migrations. Supabase is used only as PostgreSQL;
-there is no Supabase SDK. The schema contains users, vehicles, services, and
-appointments. On `/start`, the bot creates or updates the sender's user profile
+there is no Supabase SDK. The schema contains users, vehicles, services,
+appointments, conversations/messages, and knowledge chunks. On `/start`, the bot creates or updates the sender's user profile
 by Telegram ID before displaying the welcome message and menu. The service
 catalog reads active services from PostgreSQL. Users can list and add their own
 vehicles in private chat, book a service, and view upcoming appointments.
 
 ## Planned future features
 
-- Multi-turn AI car issue consultation
+- Further improvements to multi-turn AI consultation
 - Real appointment capacity and mechanic availability
-- RAG knowledge base
+- Hybrid/pgvector retrieval for the existing lexical knowledge base
 - Human handoff
 - CRM/admin dashboard
 - Voice messages
@@ -325,7 +325,7 @@ Manual confirmation writes to the configured database. Automated tests use only
 isolated SQLite databases and mocks with fixed dates; they never create
 appointments in Supabase. Real PostgreSQL connectivity is not exercised by them.
 
-### Gemini diagnostic assistant (MVP, without RAG)
+### Gemini diagnostic assistant
 
 Press `🤖 Описать проблему` in a private chat and describe the symptoms in one
 text message (1–3000 characters). The description is sent to the Gemini API.
@@ -386,7 +386,7 @@ assistant answer is saved afterwards. Provider failure preserves the question,
 sends the existing friendly Russian error, and keeps the conversation usable.
 Error messages are never saved as assistant advice. Short database transactions
 and provider work run in a worker thread; no transaction stays open during Gemini
-I/O. There is no RAG, vector database, voice, or fine-tuning.
+I/O. There is no vector database, voice, or fine-tuning.
 
 Review `alembic/versions/20260920_0002_conversation_history.py` (revision
 `20260920_0002`) before manually applying migrations with the command above.
@@ -409,6 +409,55 @@ Manual diagnostic requests call
 Gemini and may consume API quota; automated tests mock the SDK and never call
 Gemini or Supabase. Review and manually apply the conversation migration before
 using this feature.
+
+### AutoCare knowledge base (lexical RAG)
+
+Flow: Telegram → conversation service → recent conversation history + RAG retriever
+→ PostgreSQL knowledge base → AI service → Gemini. Telegram handlers contain no
+retrieval logic. Conversation history and reference knowledge remain separate;
+retrieved chunks are never inserted into conversation messages.
+
+Original Russian documents live in `knowledge_base/`. Markdown headings define
+chunks, whitespace is normalized, and long sections split deterministically at
+word boundaries (maximum 1800 characters). Filename, title/section and category
+(filename stem) are preserved. Ingestion is explicit; bot startup never loads data.
+
+After reviewing and manually applying revision `20260920_0003`
+(`alembic/versions/20260920_0003_knowledge_chunks.py`), ingest the configured database:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.ingest_knowledge
+```
+
+This command writes to the database selected by `DATABASE_URL`. It synchronizes
+each supplied source atomically: unchanged sources retain IDs and active flags;
+changed sources replace their old chunks and become active. An empty source clears
+its chunks. Missing files leave their existing database sources untouched (to retire
+a source, supply an empty file explicitly). Concurrent manual ingestions serialize
+with a PostgreSQL transaction lock. No ingestion or migration runs automatically.
+
+Retrieval uses Russian PostgreSQL full-text search over title and content, a partial
+GIN index for active chunks, and a source index for ingestion. The current user
+message supplies the query; punctuation is removed, words are joined with OR for
+recall, and PostgreSQL performs stemming/stop-word handling. Matching chunks sort
+by `ts_rank_cd` descending, then ID ascending. `MAX_RAG_CHUNKS = 4` caps results;
+the separate conversation window stays at 10 messages. Lexical search does not
+understand all synonyms; a future pgvector/hybrid retriever can replace or augment
+this boundary without changing Telegram handlers. No embeddings are implemented.
+See the [PostgreSQL text-search documentation](https://www.postgresql.org/docs/17/textsearch-controls.html).
+
+The AI receives reference items once, separately from user/model conversation turns.
+Prompt rules treat them as reference data rather than instructions, prefer supplied
+AutoCare facts, preserve safety guidance, and avoid exposing retrieval internals.
+No matches is normal. Database/search failure logs a fixed sanitized warning and
+continues without knowledge; unrelated programming errors are not silently hidden.
+
+Tests use SQLite for ingestion, mocks for providers, and PostgreSQL SQL compilation.
+When local PostgreSQL server binaries are installed, `test_rag_postgresql.py` also
+creates a disposable loopback-only cluster to verify Russian stemming, ranking,
+active filtering, limits and ingestion idempotency. It never reads `DATABASE_URL`
+or `.env`, never uses Supabase, and stops/removes its temporary cluster afterwards.
+Without those binaries only these local-server tests are skipped.
 
 ### Russian Telegram UI and welcome image
 
