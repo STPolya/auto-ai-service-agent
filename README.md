@@ -16,7 +16,7 @@ message and five reply keyboard buttons:
 - 📋 Мои записи
 - 🚗 Мои автомобили
 
-`/start` and all five menu buttons work, including the single-message
+`/start` and all five menu buttons work, including the conversational
 `🤖 Описать проблему` AI assistant.
 
 The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
@@ -362,7 +362,8 @@ The small JSON schema is retained to keep the three Russian sections predictable
 and bounded. Invalid or empty output fails safely without model fallback;
 the schema is not a guarantee of diagnostic accuracy or provider availability.
 
-Flow: Telegram handler → AI service → Gemini client → Gemini API. The system
+Flow: Telegram handler → conversation service → PostgreSQL history → AI service
+→ Gemini client → Gemini API. The system
 prompt and response schema live in `app/ai/prompts.py`. The service validates
 the response and formats short Russian sections as plain text. The prompt asks
 for possible causes and clarifying questions, avoids certainty and dangerous
@@ -371,11 +372,25 @@ smoke, or fuel leaks and emergency help for immediate danger. AI output is
 preliminary guidance, not a guaranteed diagnosis; prompt rules are not a formal
 safety guarantee.
 
-This is one message → one response: no conversation history is stored in
-PostgreSQL or reused in subsequent requests. There is no RAG, vector database,
-voice, or fine-tuning. Provider errors, blocked/empty output, and invalid output
-produce a friendly error and a sanitized server log. After failure, reopen the
-diagnostic menu to try again; the draft is cleared and no success/follow-up is sent.
+Diagnostic conversations and user/assistant messages are persisted in PostgreSQL,
+the source of truth. Each press of `🤖 Описать проблему` creates a new conversation;
+follow-up messages reuse its ID in the active FSM. `/cancel`, navigation to another
+section, or a process restart clears the active conversation without deleting history.
+There is no automatic resumption. Recent context is bounded by
+`MAX_CONTEXT_MESSAGES = 10`: the latest persisted entries are sent oldest first,
+including the current question exactly once. Gemini receives native user/model
+turns; no SDK chat session is stored. Ownership is checked on every read/write.
+
+The user message is committed before calling Gemini. Only a successful, validated
+assistant answer is saved afterwards. Provider failure preserves the question,
+sends the existing friendly Russian error, and keeps the conversation usable.
+Error messages are never saved as assistant advice. Short database transactions
+and provider work run in a worker thread; no transaction stays open during Gemini
+I/O. There is no RAG, vector database, voice, or fine-tuning.
+
+Review `alembic/versions/20260920_0002_conversation_history.py` (revision
+`20260920_0002`) before manually applying migrations with the command above.
+It adds `conversations` and `messages`; no migration is applied automatically.
 
 Install and verify locally:
 
@@ -387,10 +402,13 @@ Install and verify locally:
 ```
 
 After setting your key locally, press `🤖 Описать проблему`, send a car symptom,
-and check the three Russian sections and booking suggestion. Open the flow
-again and send `/cancel` to verify cancellation. Manual diagnostic requests call
+and check the three Russian sections and booking suggestion. Answer a follow-up
+question directly and verify that the previous symptoms remain in context.
+Send `/cancel`, then reopen diagnostics to start a separate conversation.
+Manual diagnostic requests call
 Gemini and may consume API quota; automated tests mock the SDK and never call
-Gemini or Supabase. No migration is required.
+Gemini or Supabase. Review and manually apply the conversation migration before
+using this feature.
 
 ### Russian Telegram UI and welcome image
 

@@ -30,7 +30,7 @@ class DatabaseTests(unittest.TestCase):
         self.addCleanup(self.dotenv.stop)
         self.config = Config("alembic.ini")
         self.scripts = ScriptDirectory.from_config(self.config)
-        self.migration = self.scripts.get_revision("head").module
+        self.migrations = [revision.module for revision in reversed(list(self.scripts.walk_revisions()))]
 
     def test_configuration_and_lazy_engine(self):
         with self.assertRaisesRegex(ValueError, "DATABASE_URL is required"):
@@ -53,18 +53,22 @@ class DatabaseTests(unittest.TestCase):
 
     def test_models_and_migration_match(self):
         configure_mappers()
-        self.assertEqual(set(Base.metadata.tables), {"users", "vehicles", "services", "appointments"})
+        self.assertEqual(set(Base.metadata.tables), {"users", "vehicles", "services", "appointments", "conversations", "messages"})
         self.assertTrue(models.User.__table__.c.created_at.type.timezone)
         self.assertTrue(models.Appointment.__table__.c.appointment_at.type.timezone)
+        self.assertTrue(models.Conversation.__table__.c.created_at.type.timezone)
+        self.assertTrue(models.Message.__table__.c.created_at.type.timezone)
         # SQLite is only an in-memory structural comparison, not a PostgreSQL substitute.
         engine = create_engine("sqlite://")
         try:
             with engine.begin() as connection:
                 context = MigrationContext.configure(connection, opts={"target_metadata": Base.metadata})
                 with Operations.context(context):
-                    self.migration.upgrade()
+                    for migration in self.migrations:
+                        migration.upgrade()
                     self.assertEqual(compare_metadata(context, Base.metadata), [])
-                    self.migration.downgrade()
+                    for migration in reversed(self.migrations):
+                        migration.downgrade()
         finally:
             engine.dispose()
 
@@ -74,8 +78,10 @@ class DatabaseTests(unittest.TestCase):
             "as_sql": True, "output_buffer": output, "target_metadata": Base.metadata,
         })
         with Operations.context(context):
-            self.migration.upgrade()
-            self.migration.downgrade()
+            for migration in self.migrations:
+                migration.upgrade()
+            for migration in reversed(self.migrations):
+                migration.downgrade()
         sql = output.getvalue()
         for table in Base.metadata.tables:
             self.assertIn(f"CREATE TABLE {table}", sql)

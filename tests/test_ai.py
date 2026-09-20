@@ -68,6 +68,23 @@ class GeminiClientTests(unittest.TestCase):
                 generate_response("system", "problem")
         self.constructor.assert_not_called()
 
+    def test_history_is_sent_as_native_roles_and_reused_during_fallback(self):
+        history = [{"role": "user", "content": "Вибрация при торможении"},
+                   {"role": "assistant", "content": "На какой скорости?"},
+                   {"role": "user", "content": "После 80 км/ч"}]
+        self.client.models.generate_content.side_effect = [errors.APIError(503, {})] * 3 + [
+            SimpleNamespace(text=json.dumps(PAYLOAD)),
+        ]
+        with self.assertLogs("app.ai.client", level="WARNING") as logs:
+            generate_response(SYSTEM_PROMPT, history)
+        calls = self.client.models.generate_content.call_args_list
+        contents = calls[0].kwargs["contents"]
+        self.assertEqual([entry.role for entry in contents], ["user", "model", "user"])
+        self.assertEqual([entry.parts[0].text for entry in contents], [entry["content"] for entry in history])
+        self.assertTrue(all(request.kwargs["contents"] is contents for request in calls))
+        for entry in history:
+            self.assertNotIn(entry["content"], " ".join(logs.output))
+
     def test_api_and_network_errors_do_not_expose_key_or_log_it(self):
         for error in (errors.APIError(503, {"error": {"message": FAKE_KEY}}), httpx.ReadTimeout(FAKE_KEY)):
             self.client.models.generate_content.side_effect = error
@@ -214,6 +231,14 @@ class GeminiClientTests(unittest.TestCase):
 
 
 class AIServiceTests(unittest.TestCase):
+    def test_service_passes_plain_history_without_duplicate_current_message(self):
+        history = [{"role": "user", "content": "Вибрация"},
+                   {"role": "assistant", "content": "Когда?"},
+                   {"role": "user", "content": "При торможении"}]
+        with patch("app.ai.service.generate_response", return_value=json.dumps(PAYLOAD)) as client:
+            diagnose_problem(history)
+        client.assert_called_once_with(SYSTEM_PROMPT, history)
+
     def test_prompt_separates_description_from_system_rules(self):
         self.assertEqual(build_user_prompt("Шум при торможении"), "Описание проблемы от пользователя:\nШум при торможении")
         for text in ("Russian", "guaranteed diagnosis", "brake", "steering", "fuel leak", "emergency", "dangerous"):

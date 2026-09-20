@@ -8,6 +8,7 @@ from google import genai
 from google.genai import errors, types
 
 from app.ai.prompts import RESPONSE_SCHEMA
+from app.ai.history import HistoryMessage
 from app.config.settings import get_gemini_api_key
 
 PRIMARY_MODEL = "gemini-3.8-flash"
@@ -21,7 +22,7 @@ class GeminiError(RuntimeError):
     """Sanitized provider failure; never carry the SDK exception to callers."""
 
 
-def _generate_with_retries(client, model: str, user_prompt: str, config):
+def _generate_with_retries(client, model: str, user_prompt: str | list[types.Content], config):
     """Retry one model; terminal API errors stay inside this client boundary."""
     for attempt in range(len(RETRY_DELAYS) + 1):
         try:
@@ -39,9 +40,19 @@ def _generate_with_retries(client, model: str, user_prompt: str, config):
             time.sleep(RETRY_DELAYS[attempt])
 
 
-def generate_response(system_prompt: str, user_prompt: str) -> str:
+def generate_response(system_prompt: str, user_prompt: list[HistoryMessage] | str) -> str:
     model = PRIMARY_MODEL
     try:
+        if not isinstance(user_prompt, str):
+            if any(entry["role"] not in ("user", "assistant") for entry in user_prompt):
+                raise ValueError("Invalid history role")
+            user_prompt = [
+                types.Content(
+                    role="model" if entry["role"] == "assistant" else "user",
+                    parts=[types.Part(text=entry["content"])],
+                )
+                for entry in user_prompt
+            ]
         api_key = get_gemini_api_key()
         with genai.Client(api_key=api_key, http_options=types.HttpOptions(
             timeout=30000, retry_options=types.HttpRetryOptions(attempts=1),
