@@ -53,7 +53,7 @@ class DatabaseTests(unittest.TestCase):
 
     def test_models_and_migration_match(self):
         configure_mappers()
-        self.assertEqual(set(Base.metadata.tables), {"users", "vehicles", "services", "appointments", "conversations", "messages", "knowledge_chunks"})
+        self.assertEqual(set(Base.metadata.tables), {"users", "vehicles", "services", "appointments", "conversations", "messages", "knowledge_chunks", "support_requests"})
         self.assertTrue(models.User.__table__.c.created_at.type.timezone)
         self.assertTrue(models.Appointment.__table__.c.appointment_at.type.timezone)
         self.assertTrue(models.Conversation.__table__.c.created_at.type.timezone)
@@ -93,6 +93,9 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("CREATE INDEX ix_knowledge_chunks_search", sql)
         self.assertIn("USING gin (to_tsvector('russian'::regconfig, title || ' ' || content))", sql)
         self.assertIn("WHERE is_active IS true", sql)
+        self.assertIn("CREATE UNIQUE INDEX uq_support_requests_active_conversation", sql)
+        self.assertIn("WHERE status IN ('new', 'in_progress')", sql)
+        self.assertIn("ck_support_requests_status", sql)
 
     def test_session_commit_and_rollback(self):
         engine = create_engine("sqlite://")

@@ -13,6 +13,7 @@ from app.bot.handlers.vehicles import router as vehicles_router
 from app.bot.handlers.booking import router as booking_router
 from app.bot.handlers.appointments import router as appointments_router
 from app.bot.handlers.diagnostics import router as diagnostics_router
+from app.bot.handlers.handoff import router as handoff_router
 from app.config.settings import get_bot_token
 
 
@@ -28,6 +29,7 @@ async def main() -> None:
 
     dispatcher = Dispatcher(events_isolation=SimpleEventIsolation())
     dispatcher.include_router(diagnostics_router)
+    dispatcher.include_router(handoff_router)
     dispatcher.include_router(appointments_router)
     dispatcher.include_router(booking_router)
     dispatcher.include_router(vehicles_router)

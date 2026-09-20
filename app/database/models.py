@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Numeric, String, Text, func, true, literal_column
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, Text, func, true, literal_column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import to_tsvector
 
 from app.database.base import Base
+from app.services.support_status import ACTIVE_STATUSES, ALLOWED_STATUSES, NEW
 
 
 class User(Base):
@@ -119,3 +120,21 @@ KnowledgeChunk.__table__.append_constraint(Index(
     "ix_knowledge_chunks_search", knowledge_search_vector(),
     postgresql_using="gin", postgresql_where=KnowledgeChunk.is_active.is_(True),
 ).ddl_if(dialect="postgresql"))
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default=NEW, server_default=NEW, index=True)
+    summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint(status.in_(ALLOWED_STATUSES), name="ck_support_requests_status"),
+        Index("uq_support_requests_active_conversation", conversation_id, unique=True,
+              postgresql_where=status.in_(ACTIVE_STATUSES), sqlite_where=status.in_(ACTIVE_STATUSES)),
+    )

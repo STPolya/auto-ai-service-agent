@@ -22,6 +22,48 @@ from app.rag.retriever import retrieve_context
 
 
 class PostgreSQLRetrievalTests(unittest.TestCase):
+    def test_support_handoff_race_and_partial_unique_index(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from sqlalchemy.exc import IntegrityError
+        from app.database.models import User, Conversation, Message, SupportRequest
+        from app.services.support_request_service import create_support_request
+        from app.services.support_status import IN_PROGRESS, RESOLVED
+
+        for model in (User, Conversation, Message, SupportRequest):
+            model.__table__.create(self.engine, checkfirst=True)
+        with self.factory.begin() as session:
+            user = User(telegram_id=12345)
+            session.add(user)
+            session.flush()
+            conversation = Conversation(user_id=user.id)
+            session.add(conversation)
+            session.flush()
+            user_id, conversation_id = user.id, conversation.id
+        barrier = Barrier(2)
+        def summarize(history):
+            barrier.wait(timeout=10)
+            # Both initial reads are closed, and neither writer can begin yet.
+            self.assertEqual(self.engine.pool.checkedout(), 0)
+            barrier.wait(timeout=10)
+            return "Причина обращения не уточнена."
+        with patch("app.services.support_request_service.get_session_factory", return_value=self.factory), \
+             patch("app.services.support_request_service.summarize_handoff", side_effect=summarize):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(create_support_request, 12345, conversation_id) for _ in range(2)]
+                results = [future.result(timeout=15) for future in futures]
+        self.assertEqual(sorted(result.created for result in results), [False, True])
+        self.assertEqual(results[0].request.id, results[1].request.id)
+        with self.assertRaises(IntegrityError):
+            with self.factory.begin() as session:
+                session.add(SupportRequest(user_id=user_id, conversation_id=conversation_id, status=IN_PROGRESS))
+        with self.factory.begin() as session:
+            session.get(SupportRequest, results[0].request.id).status = RESOLVED
+        with self.factory.begin() as session:
+            session.add(SupportRequest(user_id=user_id, conversation_id=conversation_id, status=IN_PROGRESS))
+        with self.factory() as session:
+            self.assertEqual(len(list(session.scalars(select(SupportRequest)))), 2)
+
     @classmethod
     def setUpClass(cls):
         executable = shutil.which("initdb")

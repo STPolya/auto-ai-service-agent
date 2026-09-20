@@ -7,12 +7,13 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import Message
 
 from app.ai.service import DiagnosticError, DiagnosticInputError, MAX_PROBLEM_LENGTH
 from app.services.conversation_service import ConversationError, create_conversation, diagnostic_turn
 from app.bot.keyboards.main_menu import BOOKING_BUTTON, DIAGNOSTICS_BUTTON, MENU_LABELS, main_menu_keyboard
 from app.bot.states.diagnostics import Diagnostics
+from app.bot.keyboards.handoff import handoff_keyboard
 
 router = Router(name="diagnostics")
 router.message.filter(F.chat.type == "private")
@@ -47,7 +48,7 @@ async def begin_diagnostics(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(diagnostic_conversation_id=conversation_id)
     await state.set_state(Diagnostics.waiting_for_problem_description)
-    await message.answer(PROMPT_MESSAGE, reply_markup=ReplyKeyboardRemove())
+    await message.answer(PROMPT_MESSAGE, reply_markup=handoff_keyboard(conversation_id))
 
 
 @router.message(Diagnostics.waiting_for_problem_description)
@@ -78,5 +79,6 @@ async def receive_problem(message: Message, state: FSMContext) -> None:
         return
     # Bound UTF-16 length conservatively; send plain text, never model-generated markup.
     for offset in range(0, len(answer), 2000):
-        await message.answer(answer[offset:offset + 2000], parse_mode=None)
+        await message.answer(answer[offset:offset + 2000], parse_mode=None,
+                             reply_markup=handoff_keyboard(conversation_id) if offset + 2000 >= len(answer) else None)
     await message.answer(FOLLOWUP_MESSAGE, reply_markup=main_menu_keyboard())

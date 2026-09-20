@@ -32,7 +32,7 @@ vehicles in private chat, book a service, and view upcoming appointments.
 - Further improvements to multi-turn AI consultation
 - Real appointment capacity and mechanic availability
 - Hybrid/pgvector retrieval for the existing lexical knowledge base
-- Human handoff
+- Operator notifications and handoff workflow tools
 - CRM/admin dashboard
 - Voice messages
 - Analytics
@@ -458,6 +458,54 @@ creates a disposable loopback-only cluster to verify Russian stemming, ranking,
 active filtering, limits and ingestion idempotency. It never reads `DATABASE_URL`
 or `.env`, never uses Supabase, and stops/removes its temporary cluster afterwards.
 Without those binaries only these local-server tests are skipped.
+
+### Human handoff and support requests
+
+During diagnostics, `👨‍💼 Связаться с оператором` appears on the entry prompt and
+AI answers. It creates a persisted support request for the active conversation.
+The service verifies the sender owns that conversation; stale buttons cannot
+hand off a different/new conversation. A repeated click returns the existing
+active request with a friendly confirmation. No operator availability or response
+time is promised. No notification integration or operator UI exists yet.
+
+Flow: Telegram → conversation/diagnostics → either RAG + Gemini diagnostic response,
+or human handoff → actual conversation history → AI operator summary → SupportRequest
+→ future CRM/operator interface. The support-request service exposes creation,
+owned retrieval, active lookup and bounded user listing, independent of Telegram.
+
+`support_requests` stores user/conversation references, status, a nullable summary,
+and timezone-aware creation/update timestamps. Statuses are centralized: `new`,
+`in_progress`, `resolved`, `cancelled`; creation always starts as `new`. A CHECK
+constraint restricts statuses. A partial unique index allows only one `new` or
+`in_progress` request per conversation while retaining closed historical requests.
+The service checks twice and locks the conversation during the final short
+transaction; the unique index also protects against writers outside the service.
+`updated_at` is refreshed by SQLAlchemy updates; future direct-SQL writers must
+explicitly update it. Operator-side status controls are outside this milestone.
+
+`MAX_HANDOFF_MESSAGES = 30` is independent of the diagnostic context limit. For
+long conversations, the first 10 and latest 20 messages are merged in chronological
+order without overlap, preserving initial complaints and recent clarifications.
+Each input message is capped at 3000 characters. Summaries use a separate Russian
+operator prompt and JSON schema, reuse the same Gemini credentials, models,
+timeouts and retry/fallback policy, and do not retrieve RAG context. The output is
+at most 3000 characters and must preserve uncertainty and distinguish customer
+reports from AI suggestions. No database transaction is held during Gemini I/O.
+
+If Gemini fails or returns invalid summary output, a sanitized warning is logged
+and a deterministic local excerpt summary is saved instead. Empty conversations
+also work without a Gemini call. Summaries are internal, not sent to the customer.
+Original messages are neither copied into a second history nor modified/deleted.
+The FSM remains active and the AI conversation stays usable after handoff; the
+summary is a snapshot, while the request references the retained original history.
+
+Review migration `alembic/versions/20260920_0004_support_requests.py`, revision
+`20260920_0004`, and apply it manually before using handoff. Nothing applies it at
+bot startup. After reviewing/applying it, manual verification is: open diagnostics,
+press the operator button before or after describing a symptom, press it again to
+check duplicate handling, and send another diagnostic message to continue the chat.
+Automated tests mock Gemini/Telegram and use only isolated databases, including
+a concurrent-creation check on the disposable local PostgreSQL cluster.
 
 ### Russian Telegram UI and welcome image
 

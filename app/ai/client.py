@@ -40,7 +40,7 @@ def _generate_with_retries(client, model: str, user_prompt: str | list[types.Con
             time.sleep(RETRY_DELAYS[attempt])
 
 
-def generate_response(system_prompt: str, user_prompt: list[HistoryMessage] | str) -> str:
+def generate_response(system_prompt: str, user_prompt: list[HistoryMessage] | str, *, response_schema: dict | None = None) -> str:
     model = PRIMARY_MODEL
     try:
         if not isinstance(user_prompt, str):
@@ -59,7 +59,7 @@ def generate_response(system_prompt: str, user_prompt: list[HistoryMessage] | st
         )) as client:
             config = types.GenerateContentConfig(
                 system_instruction=system_prompt, response_mime_type="application/json",
-                response_schema=RESPONSE_SCHEMA, max_output_tokens=2048,
+                response_schema=RESPONSE_SCHEMA if response_schema is None else response_schema, max_output_tokens=2048,
             )
             try:
                 response = _generate_with_retries(client, model, user_prompt, config)

@@ -29,6 +29,22 @@ class GeminiModelTests(unittest.TestCase):
 
 
 class GeminiClientTests(unittest.TestCase):
+    def test_summary_schema_uses_existing_model_fallback_and_timeout(self):
+        from app.ai.handoff_prompts import SUMMARY_PROMPT, SUMMARY_SCHEMA
+        self.client.models.generate_content.side_effect = [errors.APIError(503, {})] * 3 + [
+            SimpleNamespace(text='{"summary":"Жалоба: вибрация"}'),
+        ]
+        with self.assertLogs("app.ai.client", level="WARNING"):
+            raw = generate_response(SUMMARY_PROMPT, "conversation data", response_schema=SUMMARY_SCHEMA)
+        self.assertIn("summary", json.loads(raw))
+        calls = self.client.models.generate_content.call_args_list
+        self.assertEqual([c.kwargs["model"] for c in calls], [PRIMARY_MODEL] * 3 + [FALLBACK_MODEL])
+        config = calls[0].kwargs["config"]
+        self.assertEqual(config.response_schema, SUMMARY_SCHEMA)
+        self.assertEqual(config.system_instruction, SUMMARY_PROMPT)
+        self.assertTrue(all(c.kwargs["config"] is config for c in calls))
+        self.assertEqual(self.constructor.call_args.kwargs["http_options"].timeout, 30000)
+
     def setUp(self):
         for patcher in (
             patch.dict(os.environ, {"GEMINI_API_KEY": FAKE_KEY}),
