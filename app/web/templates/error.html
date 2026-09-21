@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · AutoCare CRM{% endblock %}
+{% block public_content %}
+<section class="panel error-panel"><p class="eyebrow">AutoCare CRM · {{ code }}</p><h1>{{ title }}</h1><p class="muted">{{ message }}</p><a class="button button-primary" href="/admin/support-requests">К обращениям</a><a class="button button-quiet" href="/admin/login">На страницу входа</a></section>
+{% endblock %}

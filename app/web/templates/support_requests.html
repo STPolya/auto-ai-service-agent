@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Обращения · AutoCare CRM{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Клиентский сервис</p><h1>Обращения</h1><p class="muted">Запросы клиентов, переданные оператору из AI-диалога.</p></div><span class="page-note">Время указано по Москве</span></div>
+<section class="panel" aria-label="Список обращений">
+  <form method="get" action="/admin/support-requests" class="filters">
+    <div><label for="status-filter">Статус</label><select name="status" id="status-filter"><option value="">Все обращения</option>{% for value, label in status_labels.items() %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label for="page-limit">На странице</label><input type="number" id="page-limit" name="limit" min="1" max="100" value="{{ limit }}"></div>
+    <button type="submit" class="button button-secondary">Применить</button>
+    <span class="results-count">Показано: {{ items|length }}</span>
+  </form>
+  {% if items %}
+  <div class="table-scroll"><table><caption class="sr-only">Обращения клиентов, сначала новые</caption><thead><tr><th>Обращение</th><th>Клиент</th><th>Статус</th><th>Краткое содержание</th><th>Создано / обновлено</th></tr></thead><tbody>
+  {% for item in items %}
+  <tr><td><a class="request-link" href="/admin/support-requests/{{ item.id }}">#{{ item.id }} <span aria-hidden="true">↗</span></a></td>
+      <td><strong>{{ item.user|customer_label }}</strong>{% if item.user.username %}<span class="cell-note">@{{ item.user.username }}</span>{% endif %}</td>
+      <td><span class="badge badge-{{ item.status }}">{{ status_names[item.status] }}</span></td>
+      <td class="summary-preview">{{ (item.summary or 'Резюме пока отсутствует.')|truncate(160) }}</td>
+      <td class="date-cell"><span>{{ item.created_at|date_label }}</span><span class="cell-note">{{ item.updated_at|date_label }}</span></td></tr>
+  {% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="empty-state"><span class="empty-symbol" aria-hidden="true">▤</span><h2>Обращений пока нет</h2><p>Новые запросы появятся здесь после обращения клиента к оператору.<br>Попробуйте изменить фильтр, если ищете существующее обращение.</p></div>{% endif %}
+  <nav class="pagination" aria-label="Страницы обращений"><span class="small muted">Начальная позиция: {{ offset + 1 }}</span><div>{% if previous %}<a class="button button-quiet" href="{{ previous }}">← Назад</a>{% endif %}{% if following %}<a class="button button-secondary" href="{{ following }}">Далее →</a>{% endif %}</div></nav>
+</section>
+{% endblock %}

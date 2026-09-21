@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Обращение #{{ item.id }} · AutoCare CRM{% endblock %}
+{% block content %}
+<a class="back-link" href="/admin/support-requests">← К списку обращений</a>
+<div class="page-heading"><div><p class="eyebrow">Клиентский сервис</p><h1>Обращение #{{ item.id }}</h1><p class="muted">Создано {{ item.created_at|date_label }} · МСК<br>Обновлено {{ item.updated_at|date_label }} · МСК</p></div><span class="badge badge-{{ item.status }}">{{ status_names[item.status] }}</span></div>
+<div class="detail-grid">
+ <div class="detail-main">
+  <section class="panel section-panel"><div class="section-heading"><h2>Резюме для оператора</h2><span class="small muted">Контекст обращения</span></div><p class="preserve-text">{{ item.summary or 'Резюме пока отсутствует. Ознакомьтесь с историей диалога ниже.' }}</p></section>
+  <section class="panel section-panel"><div class="section-heading"><h2>История диалога</h2><span class="small muted">{{ item.messages|length }} сообщ.</span></div>
+  <ol class="conversation">{% for message in item.messages %}<li class="message message-{{ message.role }}"><div class="message-meta"><strong>{{ 'Клиент' if message.role == 'user' else 'AI-помощник' }}</strong><time datetime="{{ message.created_at.isoformat() }}">{{ message.created_at|date_label }} · МСК</time></div><p class="preserve-text">{{ message.content }}</p></li>{% else %}<li class="muted">Клиент запросил оператора до начала консультации. Сообщений пока нет.</li>{% endfor %}</ol>
+  </section>
+ </div>
+ <aside class="detail-aside">
+  <section class="panel section-panel"><h2>Клиент</h2><p class="customer-name">{{ item.user|customer_label }}</p><dl class="facts"><dt>Telegram</dt><dd>{{ '@' ~ item.user.username if item.user.username else 'Имя пользователя не указано' }}</dd><dt>Telegram ID</dt><dd>{{ item.user.telegram_id }}</dd></dl></section>
+  <section class="panel section-panel"><h2>Автомобили</h2>{% for vehicle in item.vehicles %}<div class="vehicle"><strong>{{ vehicle.brand }} {{ vehicle.model }}</strong><p class="small muted">{{ vehicle.year if vehicle.year else 'Год не указан' }} · {{ vehicle.license_plate or 'Госномер не указан' }}</p></div>{% else %}<p class="muted">Клиент пока не добавил автомобиль.</p>{% endfor %}</section>
+  <section class="panel section-panel"><h2>Работа с обращением</h2><div class="status-actions">{% for status, label in available_actions(item.status) %}<form method="post" action="/admin/support-requests/{{ item.id }}/status"><input type="hidden" name="csrf_token" value="{{ session.csrf }}"><input type="hidden" name="status" value="{{ status }}"><button type="submit" class="button {{ 'button-primary' if status == 'in_progress' else 'button-secondary' }}">{{ label }}</button></form>{% else %}<p class="muted">Обращение закрыто. История сохранена для просмотра.</p>{% endfor %}</div></section>
+ </aside>
+</div>
+{% endblock %}

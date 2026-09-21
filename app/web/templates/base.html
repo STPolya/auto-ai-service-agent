@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AutoCare CRM{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('crm_static', path='css/crm.css') }}">
+</head>
+<body>
+<a class="skip-link" href="#content">Перейти к содержимому</a>
+<header class="topbar">
+  <a class="brand" href="/admin"><span class="brand-mark" aria-hidden="true">AC</span><span>AutoCare <span class="brand-muted">CRM</span></span></a>
+  {% if session and session.key_fingerprint %}
+  <div class="header-actions"><span class="operator-label">Кабинет оператора</span>
+    <form action="/admin/logout" method="post">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf }}">
+      <button class="button button-quiet" type="submit">Выйти</button>
+    </form>
+  </div>
+  {% else %}<span class="operator-label">Рабочее пространство автосервиса</span>{% endif %}
+</header>
+{% if session and session.key_fingerprint %}
+<div class="workspace">
+  <aside class="sidebar"><p class="eyebrow">Рабочее пространство</p>
+    <nav aria-label="Основная навигация"><a class="nav-link" href="/admin/support-requests" aria-current="page"><span aria-hidden="true">▤</span> Обращения</a></nav>
+    <p class="sidebar-note">Контекст диалога.<br>Внимание к клиенту.</p>
+  </aside>
+  <main id="content" class="main-content">{% block content %}{% endblock %}</main>
+</div>
+{% else %}<main id="content" class="public-content">{% block public_content %}{% endblock %}</main>{% endif %}
+</body>
+</html>

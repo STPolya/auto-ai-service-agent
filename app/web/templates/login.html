@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Вход · AutoCare CRM{% endblock %}
+{% block public_content %}
+<section class="login-layout" aria-labelledby="login-title">
+  <div class="login-intro"><p class="eyebrow">AutoCare / Операторам</p><h1>Хороший сервис<br>начинается с диалога.</h1><p>Обращения клиентов, история консультаций и важные детали — в одном рабочем пространстве.</p><div class="intro-line"></div><p class="small muted">Внутренний кабинет команды AutoCare</p></div>
+  <div class="panel login-panel"><p class="eyebrow">Доступ для команды</p><h2 id="login-title">Вход в CRM</h2><p class="muted">Введите ключ доступа, полученный у администратора.</p>
+    {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+    <form action="/admin/login" method="post" class="login-form">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf }}">
+      <label for="admin-key">Ключ доступа</label>
+      <input id="admin-key" type="password" name="admin_key" required maxlength="4096" autocomplete="current-password" aria-describedby="key-help">
+      <p id="key-help" class="small muted">Не передавайте ключ другим людям.</p>
+      <button class="button button-primary" type="submit">Войти в рабочее пространство <span aria-hidden="true">→</span></button>
+    </form>
+  </div>
+</section>
+{% endblock %}

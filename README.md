@@ -508,7 +508,7 @@ check duplicate handling, and send another diagnostic message to continue the ch
 Automated tests mock Gemini/Telegram and use only isolated databases, including
 a concurrent-creation check on the disposable local PostgreSQL cluster.
 
-### CRM/Admin REST API (backend only)
+### CRM/Admin REST API and operator web UI
 
 `app.api.app:app` is an independent FastAPI entry point. Telegram and HTTP are
 separate processes sharing application services and synchronous SQLAlchemy:
@@ -520,9 +520,9 @@ CRM/Admin API ───┘                       └── Gemini / RAG (diagnos
 ```
 
 Importing/running the API never starts Telegram polling; `main.py` never starts
-the API. CRM reads and status changes do not call Gemini. No frontend, operator
-notifications, deployment, or CORS middleware is included. The future CRM UI will
-consume this API, with explicit frontend-origin configuration added then.
+the API. CRM reads and status changes do not call Gemini. The server-rendered
+operator UI shares these services directly. Operator notifications, deployment,
+and CORS middleware are not included.
 
 Dependencies added: `fastapi==0.141.1` and minimal `uvicorn==0.53.0` (no optional
 server extras). Pydantic and the HTTP test client dependency are already supplied
@@ -582,6 +582,55 @@ credentials and stack traces. No permissive CORS headers are enabled.
 No migration is needed for this milestone; the existing support-request migration
 must already have been reviewed/applied by the developer. Automated API tests use
 in-process HTTP calls and isolated SQLite, never Telegram, Gemini or Supabase.
+
+### Operator CRM in the browser
+
+Open http://127.0.0.1:8000/admin/login after starting the same FastAPI command
+above. `/admin` is the Russian operator interface; `/docs` remains Swagger API
+documentation for developers. Telegram does not need to run.
+
+The separate `app/web` layer contains synchronous routes, Jinja2 templates and
+local responsive CSS. Both HTML routes and the JSON API call the existing support
+request service. There is no duplicated SQL or status-transition logic, JavaScript
+build step, Node dependency, CDN, or browser database connection.
+
+Configure `ADMIN_API_KEY` and a separate, strong random `WEB_SESSION_SECRET`
+privately in your local environment. The signing secret must be at least 32
+characters and must not be the example placeholder. `WEB_COOKIE_SECURE` should
+be false for localhost HTTP and true when served over HTTPS. Never commit secrets.
+Missing session configuration fails closed without disabling public health or
+the independently authenticated JSON API.
+
+Login verifies the admin key with constant-time comparison. The browser receives
+only a signed random session identifier in an HttpOnly, SameSite=Lax cookie scoped
+to `/admin`; the admin key is never stored in the cookie. All POST forms (including
+login, logout and status changes) require a session-bound CSRF token. Private pages
+are not cached, customer text is escaped, and successful changes redirect before
+rendering the next page.
+
+Sessions expire after eight hours (pre-login sessions after ten minutes). Logout
+revokes the server-side session, including replayed cookies; admin-key rotation
+invalidates existing authenticated sessions. The bounded in-memory store supports
+one server process only: restarting/reloading logs operators out. Shared persistent
+sessions and individual operator accounts are future production work.
+
+The list supports status filtering and limit/offset pagination. Details show the
+summary, customer, vehicles and chronological conversation, with buttons only for
+allowed transitions. Empty, missing, conflict and server-error states are in Russian.
+Dates display Moscow time. No schema migration is required.
+
+Additional pinned dependencies: Jinja2 for templates, itsdangerous for signed
+session identifiers, and python-multipart for form parsing.
+
+Manual verification:
+
+1. Install requirements and run the FastAPI command above.
+2. Open `/admin/login`; check that an incorrect key is rejected, then sign in.
+3. Filter/page through requests, open a detail, and inspect its history/vehicles.
+4. On an appropriate development request, change its status and verify the redirect
+   and available actions. This writes to the configured database.
+5. Log out and verify that protected pages require login again.
+6. Open `/docs` and verify that JSON operations still require `X-Admin-Key`.
 
 ### Russian Telegram UI and welcome image
 

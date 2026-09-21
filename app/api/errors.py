@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,10 @@ class SanitizedErrorsMiddleware:
             # would make Uvicorn log the original exception and possibly secrets.
             logger.error("Admin HTTP request failed: category=unexpected.")
             if not started:
-                await JSONResponse(status_code=500, content={"detail": "Internal server error."})(scope, receive, send)
+                if scope["path"] == "/admin" or scope["path"].startswith("/admin/"):
+                    response = HTMLResponse('<!doctype html><html lang="ru"><meta charset="utf-8"><title>AutoCare CRM</title><h1>Не удалось загрузить страницу</h1><p>Попробуйте позже.</p><a href="/admin/support-requests">К обращениям</a></html>', status_code=500, headers={"Cache-Control": "no-store"})
+                else:
+                    response = JSONResponse(status_code=500, content={"detail": "Internal server error."})
+                await response(scope, receive, send)
             elif not finished:
                 await send({"type": "http.response.body", "body": b"", "more_body": False})

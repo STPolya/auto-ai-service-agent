@@ -36,3 +36,18 @@ def get_admin_api_key() -> str:
     if key == "replace_with_a_strong_random_value":
         raise ValueError("ADMIN_API_KEY must not use the example placeholder.")
     return key
+
+
+def get_web_session_secret() -> str:
+    secret = _required_environment("WEB_SESSION_SECRET")
+    if len(secret) < 32 or secret == "replace_with_a_separate_strong_random_value":
+        raise ValueError("WEB_SESSION_SECRET requires a non-placeholder value of at least 32 characters.")
+    return secret
+
+
+def get_web_cookie_secure() -> bool:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+    value = os.getenv("WEB_COOKIE_SECURE", "false").strip().lower()
+    if value not in ("true", "false"):
+        raise ValueError("WEB_COOKIE_SECURE must be true or false.")
+    return value == "true"
