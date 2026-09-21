@@ -28,3 +28,11 @@ def get_database_url() -> str:
 def get_gemini_api_key() -> str:
     """Require the Gemini key only when diagnostics are requested."""
     return _required_environment("GEMINI_API_KEY")
+
+
+def get_admin_api_key() -> str:
+    """Require admin configuration only for protected HTTP requests."""
+    key = _required_environment("ADMIN_API_KEY")
+    if key == "replace_with_a_strong_random_value":
+        raise ValueError("ADMIN_API_KEY must not use the example placeholder.")
+    return key
