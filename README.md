@@ -1,656 +1,215 @@
 # Auto AI Service Agent
 
-An extensible portfolio project for an AI-powered customer support and booking
-assistant for the fictional AutoCare car service. The project is being developed
-incrementally.
+**Auto AI Service Agent** — пет-проект для вымышленного автосервиса **AutoCare**. Он объединяет Telegram AI-помощника, запись на обслуживание, сохранение диалогов, базу знаний с RAG, передачу обращения человеку и веб-интерфейс оператора.
 
-## Current MVP
+Это работающий локальный MVP и эксперимент с AI-assisted development, а не коммерческая система действующего автосервиса.
 
-A minimal asynchronous Telegram bot built with aiogram 3 and python-dotenv.
-It runs locally using long polling and responds to `/start` with a welcome
-message and five reply keyboard buttons:
+## Зачем я сделала этот проект
 
-- 🤖 Описать проблему
-- 📅 Записаться на сервис
-- 🔧 Услуги и цены
-- 📋 Мои записи
-- 🚗 Мои автомобили
+Этот проект я создала в первую очередь как эксперимент с **AI-assisted development и форматом vibe coding**. Мне было интересно пройти разработку поэтапно. Использовать ChatGPT как технического наставника и лида, а Codex как инструмент реализации конкретных задач в репозитории.
 
-`/start` and all five menu buttons work, including the conversational
-`🤖 Описать проблему` AI assistant.
+ChatGPT помогал обсуждать архитектуру, объяснять назначение технологий, разбивать работу на небольшие этапы и готовить технические задания. Codex реализовал многие из этих задач в коде.
 
-The database foundation uses PostgreSQL hosted on Supabase, SQLAlchemy 2 typed
-models, psycopg 3, and Alembic migrations. Supabase is used only as PostgreSQL;
-there is no Supabase SDK. The schema contains users, vehicles, services,
-appointments, conversations/messages, knowledge chunks, and support requests. On `/start`, the bot creates or updates the sender's user profile
-by Telegram ID before displaying the welcome message and menu. The service
-catalog reads active services from PostgreSQL. Users can list and add their own
-vehicles in private chat, book a service, and view upcoming appointments.
+Моя роль заключалась в управлении разработкой. Я выбирала требования и архитектурные решения, настраивала внешние сервисы, запускала приложение локально, проверяла интеграции и сценарии через Telegram и CRM. Я разбирала ошибки, проверяла результаты, работала с базой данных и миграциями, запускала тесты и управляла коммитами и отправкой изменений через Git.
 
-## Planned future features
+Мне было важно не только получить результат, но и разобраться, как работает созданный код. Для меня этот репозиторий одновременно MVP и практический опыт: насколько далеко можно продвинуть проект с помощью современных AI-инструментов и почему при таком подходе необходимо понимать архитектуру и проверять реализацию.
 
-- Further improvements to multi-turn AI consultation
-- Real appointment capacity and mechanic availability
-- Hybrid/pgvector retrieval for the existing lexical knowledge base
-- Operator notifications and handoff workflow tools
-- CRM/admin frontend (the protected REST API is available)
-- Voice messages
-- Analytics
+## Что умеет проект
 
-These future features are not implemented yet.
+- **Telegram-бот на русском языке:** меню, пошаговые формы, валидация, отмена и понятные сообщения об ошибках.
+- **Пользователи:** `/start` создаёт или обновляет профиль по Telegram ID без дублирования пользователя.
+- **Автомобили:** добавление марки, модели, года и необязательного госномера; просмотр только своих автомобилей.
+- **Каталог:** активные услуги из PostgreSQL, описание, длительность и цена в EUR либо «Цена по запросу».
+- **Запись на сервис:** выбор своего автомобиля, активной услуги, даты и времени кнопками; сохранение только после подтверждения; просмотр ближайших записей.
+- **AI-консультация:** диалог с Gemini о симптомах автомобиля, возможных причинах и необходимых уточнениях.
+- **Память и RAG:** сохранение сообщений, ограниченный контекст диалога и поиск по внутренней базе знаний AutoCare.
+- **Передача оператору:** обращение со ссылкой на диалог и кратким резюме; локальное резервное резюме при недоступности AI.
+- **CRM:** защищённый JSON API и серверный веб-интерфейс для просмотра обращений, истории, автомобилей клиента и изменения статуса.
 
-## Local setup
+## Как выглядит система
 
-Use Python 3.10 or newer and create a Telegram bot through @BotFather to obtain
-your own token. Run the following from the project root.
-
-Windows PowerShell (activation is not required):
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
+```mermaid
+flowchart TD
+    User[Пользователь Telegram] --> Bot[Telegram-бот · aiogram]
+    Operator[Оператор] --> CRM[AutoCare CRM · Jinja2]
+    CRM --> HTTP[FastAPI]
+    API[JSON Admin API] --> HTTP
+    Bot --> Services[Общий сервисный слой]
+    HTTP --> Services
+    Services --> DB[(PostgreSQL / Supabase)]
+    Services --> RAG[RAG · полнотекстовый поиск]
+    RAG --> DB
+    Services --> AI[AI-слой]
+    RAG -. Контекст знаний .-> AI
+    AI --> Gemini[Gemini API]
 ```
 
-macOS / Linux:
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-cp .env.example .env
-```
-
-Edit `.env` locally and fill in `TELEGRAM_BOT_TOKEN` with your token. Never commit
-this file or share the token. An existing environment variable takes precedence
-over `.env`. Missing or malformed tokens cause startup to exit with a clear error.
-If `.env` already exists, keep it; do not overwrite it with the example.
-
-Start the bot on Windows:
-
-```powershell
-.\.venv\Scripts\python.exe main.py
-```
-
-Or on macOS / Linux:
-
-```bash
-.venv/bin/python main.py
-```
-
-Open your bot in Telegram and send `/start`. Stop it with `Ctrl+C`.
-An internet connection is required. Run only one polling process per bot token.
-
-## Structure and routing
-
-`main.py` loads the token through `app/config/settings.py`, creates the bot and
-dispatcher, registers the start router, and starts long polling. The
-`CommandStart()` filter in `app/bot/handlers/start.py` routes `/start` to the
-asynchronous `handle_start` handler. The handler calls
-`app/services/user_service.py` through `asyncio.to_thread`, then sends the welcome
-message with the reply keyboard from `app/bot/keyboards/main_menu.py`.
-The service inserts missing users using PostgreSQL conflict handling, locks the
-matching row, and updates changed profile fields in one transaction. The unique
-Telegram ID index prevents duplicate users. Missing usernames and first names
-are stored as null. Database failures produce a friendly retry message and a
-server log without exception details; the welcome message is sent only after
-synchronization succeeds.
-
-Change `WELCOME_MESSAGE` in the start handler to edit the greeting and
-`MENU_LABELS` in the keyboard module to edit button text. Add future handlers as
-separate router modules and register them in `main.py`.
-
-## Database development
-
-Set `DATABASE_URL` privately in your existing `.env` or environment using the
-PostgreSQL connection URL supplied by Supabase. The example file deliberately
-contains empty placeholders. Standard `postgresql://` URLs and explicit
-`postgresql+psycopg://` URLs both select psycopg 3. URL-encode special characters
-in passwords and retain the provider's TLS connection parameters. Never print
-the URL or include it in `alembic.ini`.
-
-Database configuration is required only when creating an engine/session factory
-or running migrations. Imports work without `DATABASE_URL`, but `/start` now
-requires a configured, reachable database with the initial migration applied.
-No tables are created automatically at startup.
-
-Install dependencies, inspect the migration history, and run offline checks:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m alembic heads
-.\.venv\Scripts\python.exe -m alembic history --verbose
-.\.venv\Scripts\python.exe -m alembic show head
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
-
-The tests disable `.env` loading, compile PostgreSQL migration SQL in memory,
-load Alembic metadata offline, and compare the migration with the models using
-an in-memory SQLite database. User service and handler tests verify profile
-synchronization, duplicate prevention, rollback, worker-thread execution, and
-safe failure responses. They do not connect to Supabase. SQLite checks do
-not verify PostgreSQL permissions, connectivity, or actual server behavior.
-
-Review `alembic/versions/20260919_0001_initial_schema.py` before applying it.
-Only after review, point `DATABASE_URL` at the intended development database and
-apply the migration yourself (this command changes that database):
-
-```powershell
-.\.venv\Scripts\python.exe -m alembic upgrade head
-```
-
-For future schema changes, `alembic revision --autogenerate -m "describe change"`
-compares the registered models with a live database; review every generated
-migration. All models are registered through `app/database/models.py` and
-`Base.metadata` in `alembic/env.py`.
-
-### Sessions
-
-`get_session_factory()` in `app/database/session.py` lazily caches an engine and
-session factory. Creating them does not connect; the first database operation
-checks out a connection. Use one session per unit of work:
-
-```python
-from app.database.session import get_session_factory
-
-SessionFactory = get_session_factory()
-with SessionFactory.begin() as session:
-    # Future database operations belong here.
-    pass
-```
-
-The context commits on success, rolls back on failure, and closes the session,
-returning its connection to the pool. `with SessionFactory() as session` only
-closes the session; writes require an explicit commit. Do not share sessions
-between threads or tasks. The `/start` handler uses `asyncio.to_thread` so each
-synchronous user transaction runs outside the async event loop. Call `get_engine().dispose()` during
-shutdown of a future component that uses the database.
-
-SQL echo is disabled and SQL parameter values are hidden in SQLAlchemy errors.
-Alembic suppresses driver error details. Future callers should not log raw
-connection objects, URLs, or driver exceptions, which can expose connection
-details. No application database logging is configured.
-
-### Python compatibility
-
-Use Python 3.10+ with the pinned dependencies. `psycopg[binary]` supplies the
-driver and libpq without requiring a local compiler or PostgreSQL installation.
-Python 3.14 requires compatible binary wheels for your OS/architecture; if pip
-cannot find one, use a supported standard CPython build or Python 3.13. The
-offline checks can be run on your interpreter before configuring a database.
-
-### Verify user synchronization locally
-
-After the offline tests pass, start the bot with
-`.\.venv\Scripts\python.exe main.py` and send `/start` twice in Telegram.
-Both requests should show the existing welcome/menu; the configured database
-should contain one user row for your Telegram ID. Change your Telegram profile
-and send `/start` again to verify the same row is updated. This manual check
-writes your actual profile to the configured database; the automated tests do not.
-No new migration is needed for this integration.
-
-### Service catalog and demo seed
-
-The `🔧 Услуги и цены` button calls `app/services/service_catalog.py` in a
-worker thread using `asyncio.to_thread`. It loads active services ordered by ID,
-closes the session, and displays each service's name, EUR price, duration, and
-optional description. Prices retain Decimal precision and show two decimal
-places; missing prices show `Цена по запросу`. Empty catalogs and database
-outages produce friendly responses without exposing exception details.
-
-Review `scripts/seed_services.py`, then manually run this command from the
-project root to insert the five fictional demo services into the database
-configured by `DATABASE_URL`:
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.seed_services
-```
-
-This command writes to the configured database. It uses the existing session
-factory and a single transaction. The unique service name constraint and
-`ON CONFLICT DO NOTHING` prevent duplicates, including on repeated runs.
-Existing rows, prices, descriptions, and active flags are preserved. Seeding
-does not run when importing the module or starting the bot and is not part of
-an Alembic migration. No new migration or dependency is needed.
-
-Offline checks and local startup:
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m compileall -q app scripts tests main.py
-.\.venv\Scripts\python.exe main.py
-```
-
-After manually seeding and starting the bot, send `/start` and press
-`🔧 Услуги и цены`. Automated seed tests use an isolated in-memory SQLite
-database; they never insert services into Supabase.
-
-### Vehicle management
-
-In a private chat, `🚗 Мои автомобили` lists only the sender's vehicles, ordered by
-ID, and provides an inline `➕ Добавить автомобиль` button even when the list is empty.
-The add flow asks for brand, model, year, and optional license plate. Use `/skip`
-at the plate step or `/cancel` at any step. Brand/model are trimmed and must be
-1–100 characters. Year must be a four-digit integer between 1886 and the current
-UTC year plus one. Plate text is trimmed, limited to 64 characters, and has no
-country-specific validation.
-
-Draft values live only in aiogram's in-memory FSM (`brand`, `model`, `year`,
-`license_plate`); restarting the bot discards unfinished forms. `/cancel` clears
-the draft without saving. Opening Мои автомобили also clears an unfinished form.
-During entry, finish the current step or use `/cancel` before navigating away.
-The dispatcher serializes updates per conversation so repeated final replies
-cannot save the same draft twice. Saving clears the draft before database work;
-on failure, check Мои автомобили before starting again because a connection failure
-can leave the commit result uncertain. Completed vehicles remain in PostgreSQL.
-
-The vehicle service reuses `sync_user` to ensure the sender exists, resolves the
-owner by Telegram ID, and never accepts a database user ID from Telegram. All
-database work runs through `asyncio.to_thread`. No new migration is required.
-
-Manual verification (writes your vehicle to the configured database):
-
-1. Run the offline tests and start the bot using the commands above.
-2. Send `/start`, press `🚗 Мои автомобили`, then `➕ Добавить автомобиль`.
-3. Enter `Toyota`, `Corolla`, an invalid year to check validation, then `2020`.
-4. Send `/skip` or enter a plate. Confirm the saved vehicle appears in Мои автомобили.
-5. Start another entry and send `/cancel`; verify no additional vehicle appears.
-6. From a different Telegram account, verify the first account's vehicles are hidden.
-
-Automated vehicle tests use an isolated in-memory database and mocked Telegram
-responses; they never create vehicles in Supabase.
-
-### Appointment booking
-
-In private chat, press `📅 Записаться на сервис`, select one of your vehicles, then an
-active service. If you have no vehicles, the bot offers the existing add-vehicle
-flow. Enter a date as `DD.MM.YYYY`, choose a time using inline buttons, review the
-vehicle/service/price/date/time summary, and press `✅ Подтвердить`. An Appointment
-is inserted only after confirmation, with status `scheduled` and no problem
-description. `/cancel` during booking or `❌ Отменить` on the review screen clears
-the draft without saving. Vehicle `/cancel` continues to work independently.
-
-Dates and times use the explicit `Europe/Moscow` timezone via standard-library
-`zoneinfo`, centralized in `app/services/booking_rules.py`; the display label is
-`МСК`. Dates must be real, today or later,
-and no more than 90 days ahead (inclusive). Starts are allowed every 30 minutes
-from 09:00 through 17:30; 18:00 is closing time, not a valid start. Today's starts
-must still be in the future. The same rules are checked again on confirmation.
-These MVP rules apply every day and constrain start times only; they do not
-model weekends, holidays, service-duration capacity, or mechanic schedules.
-Real availability is a future feature. The customer interface uses neutral time
-options and says a manager will contact the customer to confirm the booking and
-details; it does not display technical capacity/MVP disclaimers.
-
-The time keyboard has 18 half-hour options, excluding passed times for today.
-If no times remain today, the FSM returns to the date step. A `📅 Другая дата`
-button also lets the user change dates. Every time callback is validated again;
-changing the date rotates the draft token so earlier buttons cannot select a
-time for a different date. Typed times do not advance the conversation.
-
-`📋 Мои записи` shows only the sender's upcoming appointments, ordered by
-date/time and then ID, with vehicle, service, Moscow date/time, and status.
-Opening this list abandons any unfinished draft. Appointment cancellation and
-rescheduling are not implemented.
-
-The focused appointment service owns all database queries and verifies the
-Telegram user's vehicle ownership and the service's active status on review and
-again inside the save transaction. It can be reused by a future API without
-Telegram types. Handlers run synchronous database operations in worker threads.
-Drafts remain in memory; restarting the bot discards them. No migration is needed.
-
-Each booking draft has a callback token. Stale tokens and out-of-order buttons
-are rejected. Existing per-conversation event isolation plus clearing FSM state
-before confirmation I/O prevents repeated confirm callbacks from saving the
-same in-memory draft twice. This is not distributed or restart-safe idempotency;
-stronger persistence/database guarantees will be needed later. After a save
-error the draft is cleared, and the bot asks users to check Мои записи
-before retrying because a connection failure can make the commit outcome unclear.
-
-Manual verification after running the offline tests:
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m compileall -q app scripts tests main.py
-.\.venv\Scripts\python.exe main.py
-```
-
-1. Send `/start` and ensure your account has a vehicle and the catalog has an active service.
-2. Press `📅 Записаться на сервис` and select your vehicle and a service.
-3. Enter an upcoming date within 90 days and select `14:30` using its button.
-4. Review and cancel once; verify Мои записи has no new entry.
-5. Repeat and confirm; verify one entry in `📋 Мои записи` at the Moscow time.
-6. Check from another Telegram account that the vehicle and appointment remain private.
-
-Manual confirmation writes to the configured database. Automated tests use only
-isolated SQLite databases and mocks with fixed dates; they never create
-appointments in Supabase. Real PostgreSQL connectivity is not exercised by them.
-
-### Gemini diagnostic assistant
-
-Press `🤖 Описать проблему` in a private chat and describe the symptoms in one
-text message (1–3000 characters). The description is sent to the Gemini API.
-The response is in Russian, with `Возможные причины`, `Вопросы`, and
-`Рекомендация` sections. Afterwards the bot offers the existing booking menu;
-it never creates an appointment automatically. `/cancel` while waiting for a
-description clears the diagnostic FSM without making an API call.
-
-Set `GEMINI_API_KEY` privately in your existing `.env` or environment. The key
-is loaded through `get_gemini_api_key()` in the existing settings module only
-when diagnostics are requested. Do not overwrite your existing `.env` with the
-example, and never commit or share the key. Without this variable the other
-features still work; diagnostic requests receive a friendly unavailable message.
-
-The new pinned dependency `google-genai==2.24.0` is Google's official Gemini
-Python SDK. See the [SDK documentation](https://googleapis.github.io/python-genai/).
-The client uses concrete Gemini models: `gemini-3.8-flash` as primary and
-`gemini-3.5-flash` as fallback, without moving aliases. Model names are centralized in
-`app/ai/client.py`. Each call uses a context-managed synchronous client with a
-30-second HTTP timeout per attempt and a bounded JSON response. No tools or chat sessions
-are enabled. `asyncio.to_thread()` keeps SDK work off the Telegram event loop.
-
-Temporary API status codes 408, 429, 500, 502, 503, and 504 trigger at most two
-additional attempts, after 1 and 2 seconds. SDK retries are explicitly disabled
-to prevent nested retries. Only a final HTTP 503 after primary retries activates
-the fallback, which uses the same retry policy and request configuration.
-Authentication, invalid requests, transport errors,
-and invalid output are not retried. Warning logs contain only fixed failure
-categories, numeric HTTP status when available, and attempt counts; exception
-text, keys, and request contents are omitted. Persistent outages still produce
-the existing friendly unavailable response.
-
-The small JSON schema is retained to keep the three Russian sections predictable
-and bounded. Invalid or empty output fails safely without model fallback;
-the schema is not a guarantee of diagnostic accuracy or provider availability.
-
-Flow: Telegram handler → conversation service → PostgreSQL history → AI service
-→ Gemini client → Gemini API. The system
-prompt and response schema live in `app/ai/prompts.py`. The service validates
-the response and formats short Russian sections as plain text. The prompt asks
-for possible causes and clarifying questions, avoids certainty and dangerous
-mechanical instructions, and prioritizes professional help for brakes, steering,
-smoke, or fuel leaks and emergency help for immediate danger. AI output is
-preliminary guidance, not a guaranteed diagnosis; prompt rules are not a formal
-safety guarantee.
-
-Diagnostic conversations and user/assistant messages are persisted in PostgreSQL,
-the source of truth. Each press of `🤖 Описать проблему` creates a new conversation;
-follow-up messages reuse its ID in the active FSM. `/cancel`, navigation to another
-section, or a process restart clears the active conversation without deleting history.
-There is no automatic resumption. Recent context is bounded by
-`MAX_CONTEXT_MESSAGES = 10`: the latest persisted entries are sent oldest first,
-including the current question exactly once. Gemini receives native user/model
-turns; no SDK chat session is stored. Ownership is checked on every read/write.
-
-The user message is committed before calling Gemini. Only a successful, validated
-assistant answer is saved afterwards. Provider failure preserves the question,
-sends the existing friendly Russian error, and keeps the conversation usable.
-Error messages are never saved as assistant advice. Short database transactions
-and provider work run in a worker thread; no transaction stays open during Gemini
-I/O. There is no vector database, voice, or fine-tuning.
-
-Review `alembic/versions/20260920_0002_conversation_history.py` (revision
-`20260920_0002`) before manually applying migrations with the command above.
-It adds `conversations` and `messages`; no migration is applied automatically.
-
-Install and verify locally:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m compileall -q app scripts tests main.py
-.\.venv\Scripts\python.exe main.py
-```
-
-After setting your key locally, press `🤖 Описать проблему`, send a car symptom,
-and check the three Russian sections and booking suggestion. Answer a follow-up
-question directly and verify that the previous symptoms remain in context.
-Send `/cancel`, then reopen diagnostics to start a separate conversation.
-Manual diagnostic requests call
-Gemini and may consume API quota; automated tests mock the SDK and never call
-Gemini or Supabase. Review and manually apply the conversation migration before
-using this feature.
-
-### AutoCare knowledge base (lexical RAG)
-
-Flow: Telegram → conversation service → recent conversation history + RAG retriever
-→ PostgreSQL knowledge base → AI service → Gemini. Telegram handlers contain no
-retrieval logic. Conversation history and reference knowledge remain separate;
-retrieved chunks are never inserted into conversation messages.
-
-Original Russian documents live in `knowledge_base/`. Markdown headings define
-chunks, whitespace is normalized, and long sections split deterministically at
-word boundaries (maximum 1800 characters). Filename, title/section and category
-(filename stem) are preserved. Ingestion is explicit; bot startup never loads data.
-
-After reviewing and manually applying revision `20260920_0003`
-(`alembic/versions/20260920_0003_knowledge_chunks.py`), ingest the configured database:
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.ingest_knowledge
-```
-
-This command writes to the database selected by `DATABASE_URL`. It synchronizes
-each supplied source atomically: unchanged sources retain IDs and active flags;
-changed sources replace their old chunks and become active. An empty source clears
-its chunks. Missing files leave their existing database sources untouched (to retire
-a source, supply an empty file explicitly). Concurrent manual ingestions serialize
-with a PostgreSQL transaction lock. No ingestion or migration runs automatically.
-
-Retrieval uses Russian PostgreSQL full-text search over title and content, a partial
-GIN index for active chunks, and a source index for ingestion. The current user
-message supplies the query; punctuation is removed, words are joined with OR for
-recall, and PostgreSQL performs stemming/stop-word handling. Matching chunks sort
-by `ts_rank_cd` descending, then ID ascending. `MAX_RAG_CHUNKS = 4` caps results;
-the separate conversation window stays at 10 messages. Lexical search does not
-understand all synonyms; a future pgvector/hybrid retriever can replace or augment
-this boundary without changing Telegram handlers. No embeddings are implemented.
-See the [PostgreSQL text-search documentation](https://www.postgresql.org/docs/17/textsearch-controls.html).
-
-The AI receives reference items once, separately from user/model conversation turns.
-Prompt rules treat them as reference data rather than instructions, prefer supplied
-AutoCare facts, preserve safety guidance, and avoid exposing retrieval internals.
-No matches is normal. Database/search failure logs a fixed sanitized warning and
-continues without knowledge; unrelated programming errors are not silently hidden.
-
-Tests use SQLite for ingestion, mocks for providers, and PostgreSQL SQL compilation.
-When local PostgreSQL server binaries are installed, `test_rag_postgresql.py` also
-creates a disposable loopback-only cluster to verify Russian stemming, ranking,
-active filtering, limits and ingestion idempotency. It never reads `DATABASE_URL`
-or `.env`, never uses Supabase, and stops/removes its temporary cluster afterwards.
-Without those binaries only these local-server tests are skipped.
-
-### Human handoff and support requests
-
-During diagnostics, `👨‍💼 Связаться с оператором` appears on the entry prompt and
-AI answers. It creates a persisted support request for the active conversation.
-The service verifies the sender owns that conversation; stale buttons cannot
-hand off a different/new conversation. A repeated click returns the existing
-active request with a friendly confirmation. No operator availability or response
-time is promised. No notification integration or operator UI exists yet.
-
-Flow: Telegram → conversation/diagnostics → either RAG + Gemini diagnostic response,
-or human handoff → actual conversation history → AI operator summary → SupportRequest
-→ CRM API / future operator UI. The support-request service exposes creation,
-owned retrieval, active lookup and bounded user listing, independent of Telegram.
-
-`support_requests` stores user/conversation references, status, a nullable summary,
-and timezone-aware creation/update timestamps. Statuses are centralized: `new`,
-`in_progress`, `resolved`, `cancelled`; creation always starts as `new`. A CHECK
-constraint restricts statuses. A partial unique index allows only one `new` or
-`in_progress` request per conversation while retaining closed historical requests.
-The service checks twice and locks the conversation during the final short
-transaction; the unique index also protects against writers outside the service.
-`updated_at` is refreshed by SQLAlchemy updates; future direct-SQL writers must
-explicitly update it. Status changes are available through the protected CRM API;
-Telegram users have no operator-side status controls.
-
-`MAX_HANDOFF_MESSAGES = 30` is independent of the diagnostic context limit. For
-long conversations, the first 10 and latest 20 messages are merged in chronological
-order without overlap, preserving initial complaints and recent clarifications.
-Each input message is capped at 3000 characters. Summaries use a separate Russian
-operator prompt and JSON schema, reuse the same Gemini credentials, models,
-timeouts and retry/fallback policy, and do not retrieve RAG context. The output is
-at most 3000 characters and must preserve uncertainty and distinguish customer
-reports from AI suggestions. No database transaction is held during Gemini I/O.
-
-If Gemini fails or returns invalid summary output, a sanitized warning is logged
-and a deterministic local excerpt summary is saved instead. Empty conversations
-also work without a Gemini call. Summaries are internal, not sent to the customer.
-Original messages are neither copied into a second history nor modified/deleted.
-The FSM remains active and the AI conversation stays usable after handoff; the
-summary is a snapshot, while the request references the retained original history.
-
-Review migration `alembic/versions/20260920_0004_support_requests.py`, revision
-`20260920_0004`, and apply it manually before using handoff. Nothing applies it at
-bot startup. After reviewing/applying it, manual verification is: open diagnostics,
-press the operator button before or after describing a symptom, press it again to
-check duplicate handling, and send another diagnostic message to continue the chat.
-Automated tests mock Gemini/Telegram and use only isolated databases, including
-a concurrent-creation check on the disposable local PostgreSQL cluster.
-
-### CRM/Admin REST API and operator web UI
-
-`app.api.app:app` is an independent FastAPI entry point. Telegram and HTTP are
-separate processes sharing application services and synchronous SQLAlchemy:
+Telegram и CRM разные интерфейсы над общей логикой и данными. Обработчики отвечают за ввод и вывод, сервисы за сценарии и правила, ORM за хранение, AI-слой за взаимодействие с моделью.
+
+SQLAlchemy остаётся синхронным. Telegram вызывает операции с БД и AI через `asyncio.to_thread()`. Синхронные HTTP-маршруты FastAPI выполняются в пуле потоков. Транзакции БД не удерживаются во время ожидания Gemini.
+
+## Пример пользовательского сценария
+
+1. Пользователь выбирает «Описать проблему» и описывает вибрацию при торможении.
+2. Сообщение сохраняется в текущем диалоге.
+3. RAG ищет подходящие фрагменты знаний AutoCare по текущему вопросу.
+4. Gemini получает недавнюю историю и найденные знания, затем формирует ответ на русском.
+5. Пользователь нажимает «Связаться с оператором».
+6. Создаётся обращение с резюме разговора. При ошибке Gemini используется локальная выписка из истории.
+7. Оператор входит в CRM, открывает обращение и читает резюме, сообщения и сведения об автомобилях.
+8. Оператор переводит обращение в работу, а затем отмечает решённым или отменённым.
+
+Само обращение не отправляет уведомление оператору: он просматривает его в CRM. Диалог с AI после передачи остаётся доступен.
+
+## Технологии
+
+| Технология | Роль в проекте |
+| --- | --- |
+| Python | Основной язык; асинхронные Telegram-обработчики и синхронные прикладные сервисы |
+| aiogram 3 | Telegram long polling, маршрутизация, клавиатуры и FSM |
+| PostgreSQL / Supabase | Хранение пользователей, автомобилей, записей, диалогов, знаний и обращений |
+| SQLAlchemy 2 | Типизированные ORM-модели, запросы и транзакции |
+| psycopg 3 | Драйвер подключения к PostgreSQL |
+| Alembic | Версионирование схемы базы данных |
+| Google Gemini / google-genai | Диагностические ответы и отдельный сценарий резюмирования для оператора |
+| PostgreSQL Full-Text Search | Лексический поиск по русскоязычной базе знаний |
+| FastAPI / Uvicorn | HTTP-приложение, JSON API и запуск ASGI-сервера |
+| Pydantic | Явные схемы запросов и ответов Admin API |
+| Jinja2 и локальный CSS | Серверный HTML-интерфейс CRM без Node.js и фронтенд-фреймворка |
+| itsdangerous | Подпись идентификаторов веб-сессий |
+| python-multipart | Разбор HTML-форм входа и изменения статуса |
+| python-dotenv | Загрузка локальной конфигурации из `.env` |
+| unittest | Автоматические тесты с изолированными БД и подменой внешних вызовов |
+
+Прямые зависимости закреплены в `requirements.txt`. Pydantic используется через зависимости существующего стека. В локальной разработке использовался Python 3.14; формальная матрица поддержки версий Python в репозитории не задана.
+
+## Структура проекта
 
 ```text
-Telegram bot ────┐
-                ├── Application services ── PostgreSQL
-CRM/Admin API ───┘                       └── Gemini / RAG (diagnostics only)
+app/
+├── bot/                 # Telegram: обработчики, клавиатуры, состояния FSM
+├── services/            # Прикладные сценарии и бизнес-правила
+├── database/            # ORM-модели, engine и фабрика сессий
+├── ai/                  # Gemini-клиент, промпты, ответы и резюме
+├── rag/                 # Чанкинг, загрузка и поиск знаний
+├── api/                 # FastAPI, JSON-маршруты, схемы и API-авторизация
+├── web/                 # Веб-сессии, HTML-маршруты, шаблоны и CSS CRM
+├── config/              # Конфигурация из окружения
+└── security.py          # Сравнение ключей доступа
+knowledge_base/          # Исходные Markdown-документы AutoCare
+alembic/                 # Настройка и версии миграций
+scripts/                 # Ручная загрузка услуг и знаний
+tests/                   # Изолированные автоматические проверки
+main.py                  # Точка входа Telegram-бота
+requirements.txt
+.env.example
 ```
 
-Importing/running the API never starts Telegram polling; `main.py` never starts
-the API. CRM reads and status changes do not call Gemini. The server-rendered
-operator UI shares these services directly. Operator notifications, deployment,
-and CORS middleware are not included.
+## База данных
 
-Dependencies added: `fastapi==0.141.1` and minimal `uvicorn==0.53.0` (no optional
-server extras). Pydantic and the HTTP test client dependency are already supplied
-by existing dependencies. Configure `ADMIN_API_KEY` privately via the existing
-environment/`.env` configuration; replace the example placeholder with your own
-strong random value. Never put it in URLs, source control or shared screenshots.
-Install and run locally from the repository root:
+В проекте PostgreSQL размещён на Supabase. Supabase используется как хостинг PostgreSQL: приложение подключается через psycopg и SQLAlchemy, без Supabase Python SDK. Для локальной разработки можно использовать отдельный PostgreSQL.
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.api.app:app --reload --no-access-log
-```
+Telegram и CRM работают с одной схемой:
 
-API: http://127.0.0.1:8000 · Swagger: http://127.0.0.1:8000/docs
-
-Telegram does not need to run simultaneously. The local command disables access
-logs to avoid recording URL input. Bind remains localhost. Public `/health` only
-returns `{"status":"ok"}`; it is a process health check, not a database readiness check.
-OpenAPI/docs are public for local development and contain no configured secrets.
-Swagger's **Authorize** control uses the `AdminKey` security scheme and sends the
-key as `X-Admin-Key` for protected operations.
-
-Every `/api/admin` route has centralized header-only authentication with constant-time
-comparison. Missing/incorrect request keys return 401. Query-string keys are never
-accepted. A missing or example-placeholder server key fails closed with 503 when
-an authenticated-looking request is attempted; `/health` still works. No default
-key is used. This shared API key is portfolio/MVP authentication: a real multi-user
-CRM needs proper operator authentication and authorization, and HTTPS outside local
-development. No external auth provider or JWT system is added here.
-
-| Endpoint | Behavior |
+| Таблица | Назначение |
 | --- | --- |
-| `GET /health` | Public, minimal process health |
-| `GET /api/admin/support-requests` | Filter by optional `status`; `limit=20`, maximum 100; `offset=0`; newest creation time then ID first |
-| `GET /api/admin/support-requests/{request_id}` | Request, profile, conversation, actual messages oldest first, and that user's vehicles |
-| `PATCH /api/admin/support-requests/{request_id}/status` | Body `{"status":"in_progress"}`; returns updated request/profile |
+| `users` | Профили, уникальный Telegram ID |
+| `vehicles` | Автомобили, принадлежащие пользователям |
+| `services` | Каталог, стоимость, длительность и активность услуг |
+| `appointments` | Записи пользователя на выбранную услугу и автомобиль |
+| `conversations` | Диагностические диалоги пользователя |
+| `messages` | Сообщения клиента и AI в диалоге |
+| `knowledge_chunks` | Фрагменты знаний с источником, заголовком и категорией |
+| `support_requests` | Обращения оператору, статус и резюме |
 
-List responses are arrays, never the full conversation. Explicit Pydantic schemas
-define nullable profile fields, summaries, vehicle fields and timestamps. Detail
-responses include the retained conversation, not RAG chunks, prompts or provider
-settings. Status updates accept only the status field. Routes are synchronous `def`
-functions, so FastAPI runs database calls in its worker thread pool rather than
-blocking the async event loop. Sessions remain short-lived and service-owned.
-See [FastAPI's sync route behavior](https://fastapi.tiangolo.com/async/).
+Цены хранятся в `Numeric` и обрабатываются через `Decimal`. Временные отметки используют PostgreSQL-типы с часовым поясом. Принадлежность автомобилей и диалогов проверяется в сервисах.
 
-Transitions are enforced centrally and under a database row lock:
-`new → in_progress/resolved/cancelled`; `in_progress → resolved/cancelled`.
-Resolved/cancelled requests cannot reopen. Repeating the current status succeeds
-without changing `updated_at`. Terminal history therefore cannot violate the
-existing active-request uniqueness constraint through this API.
+В репозитории четыре последовательные миграции: исходная схема → диалоги и сообщения → база знаний → обращения оператору. Текущая вершина цепочки `20260920_0004`.
 
-Errors: 401 authentication; 404 missing request; 409 forbidden transition;
-422 invalid status/filter/body/pagination; 500 database or unexpected failure.
-Responses and application error logs omit raw exceptions, input values, SQL,
-credentials and stack traces. No permissive CORS headers are enabled.
+## AI и память диалога
 
-No migration is needed for this milestone; the existing support-request migration
-must already have been reviewed/applied by the developer. Automated API tests use
-in-process HTTP calls and isolated SQLite, never Telegram, Gemini or Supabase.
+Gemini вызывается только через AI-слой. Диагностический ответ запрашивается по JSON-схеме, проверяется приложением и преобразуется в русские разделы «Возможные причины», «Вопросы» и «Рекомендация».
 
-### Operator CRM in the browser
+В коде настроены основной `gemini-3.8-flash` и резервный `gemini-3.5-flash`. Это текущие константы проекта, а не гарантия доступности моделей для любого аккаунта. Для временных HTTP-ошибок предусмотрены две дополнительные попытки с задержками; переход на резервную модель происходит только после исчерпания попыток с итоговым HTTP 503.
 
-Open http://127.0.0.1:8000/admin/login after starting the same FastAPI command
-above. `/admin` is the Russian operator interface; `/docs` remains Swagger API
-documentation for developers. Telegram does not need to run.
+Диалоги и сообщения сохраняются в PostgreSQL. Для обычного ответа используется до **10 последних сообщений**, включая текущий вопрос (`MAX_CONTEXT_MESSAGES`). Сообщение клиента сохраняется до обращения к AI, ответ помощника только после успешной генерации и проверки. При ошибке провайдера история не удаляется, а техническое сообщение об ошибке не сохраняется как совет AI.
 
-The separate `app/web` layer contains synchronous routes, Jinja2 templates and
-local responsive CSS. Both HTML routes and the JSON API call the existing support
-request service. There is no duplicated SQL or status-transition logic, JavaScript
-build step, Node dependency, CDN, or browser database connection.
+Перезапуск бота сохраняет записи в БД, но не восстанавливает активное состояние FSM. Автоматического продолжения старого диалога после перезапуска сейчас нет.
 
-Configure `ADMIN_API_KEY` and a separate, strong random `WEB_SESSION_SECRET`
-privately in your local environment. The signing secret must be at least 32
-characters and must not be the example placeholder. `WEB_COOKIE_SECURE` should
-be false for localhost HTTP and true when served over HTTPS. Never commit secrets.
-Missing session configuration fails closed without disabling public health or
-the independently authenticated JSON API.
+Помощник объясняет возможные причины и задаёт вопросы; он не устанавливает окончательный диагноз. Промпты предусматривают осторожность при опасных симптомах и рекомендацию профессионального осмотра.
 
-Login verifies the admin key with constant-time comparison. The browser receives
-only a signed random session identifier in an HttpOnly, SameSite=Lax cookie scoped
-to `/admin`; the admin key is never stored in the cookie. All POST forms (including
-login, logout and status changes) require a session-bound CSRF token. Private pages
-are not cached, customer text is escaped, and successful changes redirect before
-rendering the next page.
+## RAG
 
-Sessions expire after eight hours (pre-login sessions after ten minutes). Logout
-revokes the server-side session, including replayed cookies; admin-key rotation
-invalidates existing authenticated sessions. The bounded in-memory store supports
-one server process only: restarting/reloading logs operators out. Shared persistent
-sessions and individual operator accounts are future production work.
+Первая версия RAG использует **PostgreSQL Full-Text Search**, без embeddings, pgvector и внешнего embedding API.
 
-The list supports status filtering and limit/offset pagination. Details show the
-summary, customer, vehicles and chronological conversation, with buttons only for
-allowed transitions. Empty, missing, conflict and server-error states are in Russian.
-Dates display Moscow time. No schema migration is required.
+Исходные русскоязычные документы находятся в `knowledge_base/`: тормоза, масло, шины, кондиционер, компьютерная диагностика, запись и общие вопросы AutoCare. Это тексты для вымышленного сервиса.
 
-Additional pinned dependencies: Jinja2 for templates, itsdangerous for signed
-session identifiers, and python-multipart for form parsing.
+Ручная загрузка разбивает Markdown по заголовкам, нормализует пробелы и ограничивает размер фрагмента. В `knowledge_chunks` сохраняются источник, заголовок, содержание, категория и признак активности. Повторная загрузка неизменённых файлов не создаёт дубликаты; изменившиеся источники заменяются в транзакции. Отсутствующий в каталоге файл не удаляет уже загруженные данные автоматически.
 
-Manual verification:
+Поиск использует русскую конфигурацию PostgreSQL, GIN-индекс и ранжирование совпадений. Запросом служит текущее сообщение пользователя. В AI передаются только активные фрагменты — не более **4** (`MAX_RAG_CHUNKS`), отдельно от истории разговора. Найденные знания не записываются в `messages`.
 
-1. Install requirements and run the FastAPI command above.
-2. Open `/admin/login`; check that an incorrect key is rejected, then sign in.
-3. Filter/page through requests, open a detail, and inspect its history/vehicles.
-4. On an appropriate development request, change its status and verify the redirect
-   and available actions. This writes to the configured database.
-5. Log out and verify that protected pages require login again.
-6. Open `/docs` and verify that JSON operations still require `X-Admin-Key`.
+Если совпадений нет или поиск временно недоступен, диагностический сценарий может продолжиться без RAG. Семантический или гибридный поиск остаётся возможным следующим этапом.
 
-### Russian Telegram UI and welcome image
+## Передача оператору
 
-All application-owned Telegram UI is in Russian: menus, prompts, validation,
-cancellation, empty/error states, booking review, and success messages. Database
-status values remain unchanged; presentation maps them to Russian labels.
+Кнопка связи с оператором доступна в диагностическом диалоге. Сервис проверяет владельца разговора и создаёт `SupportRequest` со статусом `new`, ссылками на пользователя и диалог, а также кратким резюме.
 
-The five original English seed names/descriptions are translated for display in
-`app/bot/presentation.py`, reused by the catalog, booking, and appointment list.
-The seed script and persisted rows remain unchanged, preserving their unique
-names and preventing duplicates. **No reseeding or data migration is needed.**
-Custom database names/descriptions are preserved rather than guessed; enter any
-future custom catalog content in Russian or extend the explicit presentation map.
+Для резюме используется отдельный промпт и схема ответа. Контекст ограничен **30 сообщениями** (`MAX_HANDOFF_MESSAGES`): началом разговора и последними уточнениями, в хронологическом порядке. При недоступности Gemini локальная функция составляет выписку из первого сообщения клиента, последующих уточнений и последнего ответа AI. Пустой диалог также допускает обращение без выдуманных симптомов.
 
-Optionally place your own welcome image at `assets/welcome.png` in the project
-root. `WELCOME_IMAGE_PATH` in `app/bot/handlers/start.py` resolves it independently
-of the working directory. `/start` sends the image with the complete Russian
-welcome text as its caption and the main menu, without a second copy of the text.
-If the file is absent, `/start` sends the same text and menu normally. No image
-has been generated, downloaded, or supplied by the application.
+Для одного разговора допускается только одно активное обращение (`new` или `in_progress`). Это проверяется сервисом и частичным уникальным индексом PostgreSQL. Резюме снимок контекста на момент создания; исходные сообщения остаются на месте, AI-диалог можно продолжать.
 
-Existing PostgreSQL timestamps remain the same instants; they are now displayed
-in Moscow time rather than Amsterdam time. No stored appointments are rewritten.
+Допустимые переходы централизованы:
+
+| Текущий статус | Следующие статусы |
+| --- | --- |
+| `new` | `in_progress`, `resolved`, `cancelled` |
+| `in_progress` | `resolved`, `cancelled` |
+| `resolved`, `cancelled` | Переходов нет |
+
+Повторная установка текущего статуса допустима. Операторские уведомления и отправка ответа клиенту из CRM пока не реализованы.
+
+## AutoCare CRM
+
+Одна точка входа `app.api.app:app` обслуживает два интерфейса:
+
+- **JSON Admin API** — программный доступ под `/api/admin`, защищённый заголовком `X-Admin-Key`.
+- **Веб-CRM** — русскоязычные серверные страницы под `/admin`, вход через `/admin/login`.
+
+CRM показывает список обращений с фильтром статуса и пагинацией, резюме, данные клиента, его автомобили и историю сообщений. В карточке доступны только допустимые действия со статусом. После изменения применяется POST/Redirect/GET. API и страницы используют один сервис обращений.
+
+| HTTP-маршрут | Назначение |
+| --- | --- |
+| `GET /health` | Публичная проверка работы HTTP-приложения, без проверки БД |
+| `GET /api/admin/support-requests` | Список: `status`, `limit` и `offset`; по умолчанию 20, максимум 100 |
+| `GET /api/admin/support-requests/{request_id}` | Карточка с пользователем, диалогом, сообщениями и автомобилями |
+| `PATCH /api/admin/support-requests/{request_id}/status` | Изменение статуса по доменным правилам |
+
+Запуск FastAPI не запускает Telegram, и наоборот. CRM не требует работающего процесса бота для просмотра уже сохранённых данных.
+
+## Безопасность
+
+Секреты загружаются из окружения или локального `.env`; `.env` исключён из Git. В репозитории есть только шаблон конфигурации.
+
+Admin API проверяет ключ из заголовка с помощью сравнения за постоянное время. Веб-вход использует тот же настроенный ключ, но отдельную сессионную авторизацию: подписанная cookie содержит случайный идентификатор, а не исходный `ADMIN_API_KEY`. Cookie имеет `HttpOnly` и `SameSite=Lax`; для HTTPS предусмотрен флаг `Secure`.
+
+Все изменяющие HTML-формы, включая вход и выход, защищены CSRF-токеном. Выход отзывает серверную сессию. Шаблоны экранируют клиентский текст; приватные страницы получают `Cache-Control: no-store`. Ошибки приложения не возвращают пользователю SQL, ключи и исходные исключения провайдера. Разрешающий все источники CORS не включён.
+
+Это **авторизация уровня портфолио-MVP с общим ключом**, а не полноценная система учётных записей и ролей операторов. Для реального многопользовательского CRM потребуются отдельные пользователи, права доступа и дальнейшая работа над эксплуатационной безопасностью.
+
+
+## Что я хотела изучить
+
+Мне хотелось связать в одном проекте несколько практических тем: архитектуру нетривиального Python-приложения, разделение интерфейсов и бизнес-логики, PostgreSQL, ORM и миграции, внешние API, RAG и обработку отказов.
+
+Отдельной целью были тестирование и развитие системы от Telegram-бота до HTTP API и операторского интерфейса без дублирования основных правил. В работе с AI-инструментами я училась формулировать небольшие проверяемые задачи, читать полученный код, замечать ограничения и проверять результат, а не считать сгенерированное решение автоматически правильным.
+
+## Возможное развитие
+
+Идеи для следующих этапов, пока не реализованные:
+
+- Telegram Mini App или другой клиент поверх общего сервисного слоя;
+- семантический либо гибридный поиск для RAG;
+- голосовые сообщения и распознавание речи;
+- индивидуальные аккаунты операторов и роли;
+- аналитика обращений и оценка качества AI-ответов;
+- подготовка и проверка развёртывания.
