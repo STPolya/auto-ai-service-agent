@@ -4,3 +4,13 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Local logs, database copies and private key exports
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.pem
+*.key
+.env.bak

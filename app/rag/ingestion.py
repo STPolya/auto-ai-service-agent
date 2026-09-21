@@ -57,6 +57,10 @@ def load_documents(directory: Path = KNOWLEDGE_DIRECTORY) -> dict[str, list[Know
     paths = sorted(directory.glob("*.md"))
     if not paths:
         raise IngestionError("No knowledge documents found.")
+    # A repository symlink named *.md must not copy a local secret into the KB.
+    root = directory.resolve()
+    if any(path.is_symlink() or not path.is_file() or path.resolve().parent != root for path in paths):
+        raise IngestionError("Knowledge sources must be regular files within the document directory.")
     return {path.name: chunk_markdown(path.name, path.read_text(encoding="utf-8-sig")) for path in paths}
 
 

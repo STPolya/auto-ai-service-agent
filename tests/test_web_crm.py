@@ -208,6 +208,26 @@ class CRMWebTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/admin/support-requests").status_code, 401)
         self.assertEqual(self.client.get("/api/admin/support-requests", headers={"X-Admin-Key": FAKE_KEY}).status_code, 200)
 
+    def test_private_json_and_auth_redirects_are_not_cacheable(self):
+        for response in (
+            self.client.get(LIST_URL),
+            self.client.get("/api/admin/support-requests"),
+            self.client.get("/api/admin/support-requests", headers={"X-Admin-Key": FAKE_KEY}),
+        ):
+            self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_oversized_login_and_api_body_are_rejected(self):
+        from app.api.errors import MAX_REQUEST_BODY_BYTES
+        body = "private-offline-input=" + "x" * MAX_REQUEST_BODY_BYTES
+        response = self.client.post("/admin/login", content=body,
+                                    headers={"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual(response.status_code, 413)
+        self.assertNotIn("private-offline-input", response.text)
+        response = self.client.patch("/api/admin/support-requests/7/status", content=body,
+                                     headers={"Content-Type": "application/json", "X-Admin-Key": FAKE_KEY})
+        self.assertEqual(response.status_code, 413)
+        self.update.assert_not_called()
+
     def test_https_cookie_security_and_private_page_headers(self):
         with patch.dict(os.environ, {"WEB_COOKIE_SECURE": "true"}):
             response = self.client.get("/admin/login")

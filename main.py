@@ -15,9 +15,11 @@ from app.bot.handlers.appointments import router as appointments_router
 from app.bot.handlers.diagnostics import router as diagnostics_router
 from app.bot.handlers.handoff import router as handoff_router
 from app.config.settings import get_bot_token
+from app.bot.secure_logging import configure_telegram_logging
 
 
 async def main() -> None:
+    configure_telegram_logging()
     try:
         token = get_bot_token()
         bot = Bot(token=token)
@@ -46,3 +48,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
+    except Exception:
+        # Startup/shutdown failures also must not reach Python's raw traceback.
+        raise SystemExit("Telegram startup or shutdown failed; check configuration and connectivity.") from None

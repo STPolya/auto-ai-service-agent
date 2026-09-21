@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.errors import SanitizedErrorsMiddleware
+from app.api.errors import SanitizedErrorsMiddleware, RequestBodyLimitMiddleware
 from app.api.routes import router
 from app.api.schemas import HealthResponse
 from app.services.support_request_service import InvalidStatusTransition, SupportRequestError, SupportRequestNotFound
@@ -17,6 +17,7 @@ from app.web.view_models import WEB_DIRECTORY, error_page, is_web_path
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="AutoCare CRM/Admin API", version="0.1.0", debug=False)
+app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(SanitizedErrorsMiddleware)
 app.include_router(router)
 app.mount("/static/crm", StaticFiles(directory=str(WEB_DIRECTORY / "static")), name="crm_static")

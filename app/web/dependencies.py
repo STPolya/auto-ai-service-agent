@@ -63,7 +63,12 @@ def new_session(key: str | None = None) -> BrowserSession:
     with _lock:
         _prune()
         if len(_sessions) >= MAX_SESSIONS:
-            del _sessions[next(iter(_sessions))]
+            # Anonymous login-page traffic must never evict an operator.
+            anonymous = next((sid for sid, value in _sessions.items()
+                              if value.key_fingerprint is None), None)
+            if anonymous is None:
+                raise WebError(503, "Вход временно недоступен. Попробуйте позже.")
+            del _sessions[anonymous]
         _sessions[session.id] = session
     return session
 
